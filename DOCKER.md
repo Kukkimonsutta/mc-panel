@@ -41,12 +41,12 @@ docker compose up -d
 docker compose ps
 ```
 
-Open `http://localhost:8080` unless `PANEL_PORT` was changed.
+Open `http://localhost:8081` unless `PANEL_PORT` was changed.
 
 Check the backend through the frontend proxy:
 
 ```bash
-curl http://localhost:8080/api/health
+curl http://localhost:8081/api/health
 ```
 
 Stop the panel without affecting Minecraft:
@@ -66,4 +66,4 @@ The backend also mounts the Minecraft directory because it reads and updates `se
 - `backend is unhealthy`: verify `DOCKER_SOCKET_GID` matches the socket group and that `minecraft-server` exists.
 - RCON commands fail: confirm `RCON_PASSWORD`, `RCON_HOST=minecraft-server`, and that both compose projects use `stark_net`.
 - Frontend cannot reach the API: inspect `docker compose logs backend frontend` and confirm the backend healthcheck passes.
-- Port `8080` is busy: set another value such as `PANEL_PORT=18080` in `.env`.
+- Port `8081` is busy: set another available value in `PANEL_PORT` in `.env`.

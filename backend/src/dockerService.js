@@ -37,6 +37,7 @@ export async function getServerStatus() {
     return {
       status: data.State.Status,
       running: data.State.Running,
+      startedAt: data.State.Running ? data.State.StartedAt : null,
       cpu: 0,
       ram: 0
     };
@@ -54,6 +55,8 @@ export async function getContainerStats() {
     const info = await getServerStatus();
     if (!info.running) return { cpu: 0, ramUsed: 0, ramTotal: 0, ramPercent: 0 };
 
+    const containerInfo = await container.inspect();
+
     // Tomamos un snapshot único del stream de stats
     const stats = await new Promise((resolve, reject) => {
       container.stats({ stream: false }, (err, data) => {
@@ -63,18 +66,22 @@ export async function getContainerStats() {
     });
 
     // --- CPU ---
-    // Docker reporta CPU en "cpu_delta" / "system_cpu_delta" normalizado por número de cores
+    // Report CPU as a percentage of total host capacity (0-100), not per-core aggregate usage.
     const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
     const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
-    const cpuCount = stats.cpu_stats.online_cpus || 1;
     let cpuPercent = 0;
     if (systemDelta > 0 && cpuDelta > 0) {
-      cpuPercent = (cpuDelta / systemDelta) * cpuCount * 100;
+      cpuPercent = (cpuDelta / systemDelta) * 100;
     }
 
     // --- RAM ---
-    const ramUsed = stats.memory_stats.usage || 0;
-    const ramLimit = stats.memory_stats.limit || 1;
+    // Exclude Linux page cache, matching Docker's memory usage display.
+    const cache = stats.memory_stats.stats?.cache || 0;
+    const ramUsed = Math.max(0, (stats.memory_stats.usage || 0) - cache);
+    const dockerLimit = stats.memory_stats.limit || 1;
+    const configuredMemory = containerInfo.Config?.Env?.find(value => value.startsWith('MEMORY='))?.slice(7);
+    const configuredLimit = parseMemoryLimit(configuredMemory);
+    const ramLimit = configuredLimit || dockerLimit;
     const ramPercent = (ramUsed / ramLimit) * 100;
 
     return {
@@ -87,6 +94,36 @@ export async function getContainerStats() {
     console.error('Error obteniendo stats del contenedor:', error.message);
     return { cpu: 0, ramUsed: 0, ramTotal: 0, ramPercent: 0 };
   }
+}
+
+function parseMemoryLimit(value) {
+  if (!value) return 0;
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)\s*([kmgt]?i?b?)?$/i);
+  if (!match) return 0;
+
+  const amount = Number(match[1]);
+  const unit = (match[2] || 'b').toLowerCase();
+  const multipliers = {
+    b: 1,
+    k: 1024,
+    kb: 1024,
+    ki: 1024,
+    kib: 1024,
+    m: 1024 ** 2,
+    mb: 1024 ** 2,
+    mi: 1024 ** 2,
+    mib: 1024 ** 2,
+    g: 1024 ** 3,
+    gb: 1024 ** 3,
+    gi: 1024 ** 3,
+    gib: 1024 ** 3,
+    t: 1024 ** 4,
+    tb: 1024 ** 4,
+    ti: 1024 ** 4,
+    tib: 1024 ** 4,
+  };
+
+  return amount * (multipliers[unit] || 0);
 }
 
 /**

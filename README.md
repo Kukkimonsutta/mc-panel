@@ -1,3 +1,32 @@
+# MC Control Panel
+
+## Local development
+
+From the repository root, install dependencies in both applications and the root process runner:
+
+```bash
+npm install
+npm --prefix backend install
+npm --prefix frontend install
+```
+
+Start the backend and Vite frontend together:
+
+```bash
+npm run dev
+```
+
+This starts the backend on `http://localhost:3005` and Vite on `http://localhost:5173`. The frontend is bound to `0.0.0.0` so it can be opened through a forwarded or externally exposed port. Vite proxies `/api` and `/socket.io` to the backend.
+
+To start them separately:
+
+```bash
+npm run dev:backend
+npm run dev:frontend
+```
+
+The backend must be running before the panel can load server status or send commands.
+
 # MC Control Panel — Frontend
 
 A Vue 3 + Vite control panel for managing a Minecraft server running in Docker.

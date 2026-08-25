@@ -78,17 +78,21 @@ app.get('/api/server/status', async (req, res) => {
   // Estructura por defecto si está apagado
   const finalStatus = {
     ...dockerStatus,
+    worldName: '',
     onlinePlayers: 0,
     maxPlayers: 10,
     players: []
   };
+
+  const properties = await readServerProperties();
+  finalStatus.worldName = properties?.['level-name'] || path.basename(config.WORLD_PATH);
 
   // 2. Si el contenedor de Docker está activo, le hacemos ping al servidor interno de Minecraft
   if (dockerStatus.running) {
     try {
       // Hacemos ping a localhost (ya que el contenedor expone el puerto al host)
       // Usamos un timeout de 1000ms para evitar que la petición web se quede colgada si Minecraft está iniciando
-      const data = await mcStatus('127.0.0.1', config.MC_STATUS_PORT, { enableSRV: false, timeout: 1000 });
+      const data = await mcStatus(config.MC_HOST, config.MC_STATUS_PORT, { enableSRV: false, timeout: 1000 });
       
       if (data) {
         finalStatus.onlinePlayers = data.players.online;
@@ -141,7 +145,7 @@ app.get('/api/server/query', async (req, res) => {
 
   try {
     // Query protocol (UDP) — puede fallar si el puerto UDP no está expuesto
-    const data = await queryFull('127.0.0.1', config.MC_QUERY_PORT, { timeout: 5000 });
+    const data = await queryFull(config.MC_HOST, config.MC_QUERY_PORT, { timeout: 5000 });
 
     res.json({
       running: true,
@@ -160,7 +164,7 @@ app.get('/api/server/query', async (req, res) => {
     // Silenciar este ruido cuando el servidor no responde a query o el puerto UDP no está expuesto.
     // El panel sigue funcionando con el estado base y el ping TCP si está disponible.
     try {
-      const pingData = await mcStatus('127.0.0.1', config.MC_STATUS_PORT, { enableSRV: false, timeout: 2000 });
+      const pingData = await mcStatus(config.MC_HOST, config.MC_STATUS_PORT, { enableSRV: false, timeout: 2000 });
       const playerSample = pingData.players?.sample && Array.isArray(pingData.players.sample) 
         ? pingData.players.sample.map(p => p.name) 
         : [];

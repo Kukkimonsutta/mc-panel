@@ -1,17 +1,16 @@
 <template>
   <div class="min-h-dvh p-3 sm:p-6 max-w-6xl mx-auto flex flex-col gap-4 sm:gap-6">
     
-    <!-- Header Estilo Gamer -->
+    <!-- Header -->
     <header class="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 border-b-2 border-indigo-900/50 pb-3 sm:pb-4">
       <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
         <div>
           <div class="flex items-center gap-2">
-            <span class="hidden sm:inline text-indigo-500 font-mono text-xs sm:text-sm tracking-widest uppercase">system_codex //</span>
             <h1 class="text-lg sm:text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-violet-400 via-fuchsia-500 to-indigo-400 font-mono">
-              MC - CONTROL PANEL
+              MC SERVER - CONTROL PANEL
             </h1>
           </div>
-          <p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-widest font-mono mt-0.5 sm:mt-1">Status monitor & live bridge console</p>
+          <p class="text-[10px] sm:text-xs text-gray-500 uppercase tracking-widest font-mono mt-0.5 sm:mt-1">Minecraft admin console</p>
         </div>
         <!-- Tab Navigation -->
         <div class="flex items-center gap-1 bg-gray-950 rounded-lg border border-gray-800 p-0.5">
@@ -28,62 +27,45 @@
         </div>
       </div>
       
-      <!-- Estado con look cyberpunk -->
-      <div 
-        class="flex items-center gap-3 bg-gray-950 px-4 py-2 rounded-lg border transition-all duration-300"
+      <!-- Status and power control -->
+      <button
+        @click="togglePower"
+        :disabled="isToggling"
+        :aria-label="serverInfo.running ? 'Stop Minecraft server' : 'Start Minecraft server'"
+        class="flex items-center gap-3 bg-gray-950 px-3 py-2 rounded-lg border transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
         :class="serverInfo.running ? 'border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.15)]'"
       >
         <span 
           class="h-2.5 w-2.5 rounded-full"
           :class="serverInfo.running ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'"
         ></span>
-        <span 
-          class="text-xs font-mono font-bold tracking-widest uppercase"
+        <span
+          class="text-[11px] font-mono font-bold tracking-widest uppercase"
           :class="serverInfo.running ? 'text-emerald-400' : 'text-rose-500'"
         >
           {{ serverInfo.running ? 'ONLINE' : 'OFFLINE' }}
         </span>
-      </div>
+        <span
+          class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-300"
+          :class="serverInfo.running ? 'bg-emerald-500' : 'bg-gray-700'"
+          aria-hidden="true"
+        >
+          <span
+            class="pointer-events-none inline-block h-4 w-4 translate-y-0.5 transform rounded-full bg-white shadow transition duration-300"
+            :class="serverInfo.running ? 'translate-x-4' : 'translate-x-0.5'"
+          />
+        </span>
+      </button>
     </header>
 
     <!-- ===== DASHBOARD VIEW ===== -->
     <template v-if="currentView === 'dashboard'">
 
-    <!-- Panel de Control y Server Data -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
-      
-      <!-- Tarjeta de Control: Switch de Energía -->
-      <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 p-4 sm:p-6 rounded-xl border border-indigo-950/50 flex flex-col justify-between gap-4 sm:gap-6">
-        <div>
-          <h2 class="text-xs font-bold text-indigo-400 tracking-wider uppercase font-mono">Core Power //</h2>
-          <p class="text-xs text-gray-400 mt-1">Toggle the main runtime container state.</p>
-        </div>
-        
-        <!-- Toggle Switch Gamer -->
-        <div class="flex items-center justify-between bg-gray-950/80 p-4 rounded-xl border border-gray-900">
-          <span class="text-xs font-mono font-bold text-gray-400 uppercase tracking-wider">System Link</span>
-          
-          <button 
-            @click="togglePower"
-            :disabled="isToggling"
-            class="relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-wait"
-            :class="serverInfo.running ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-gray-800'"
-          >
-            <span class="sr-only">Toggle Server</span>
-            <span
-              aria-hidden="true"
-              class="pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-300 ease-in-out"
-              :class="serverInfo.running ? 'translate-x-7' : 'translate-x-0'"
-            />
-          </button>
-        </div>
-      </div>
-
-      <!-- Tarjeta Server Data -->
-      <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 p-4 sm:p-6 rounded-xl border border-indigo-950/50 sm:col-span-2">
+    <!-- Server Data -->
+    <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 p-4 sm:p-6 rounded-xl border border-indigo-950/50">
         <h2 class="text-xs font-bold text-indigo-400 tracking-wider uppercase font-mono mb-4">Server Data //</h2>
         
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           <!-- CPU Gauge -->
           <div class="bg-gray-950/80 p-3 rounded-lg border border-gray-900">
             <span class="text-[10px] text-indigo-400/70 block font-mono uppercase tracking-widest mb-1">CPU</span>
@@ -104,20 +86,28 @@
               <div class="h-full rounded-full transition-all duration-700" :class="stats.ramPercent > 80 ? 'bg-rose-500' : stats.ramPercent > 50 ? 'bg-amber-500' : 'bg-emerald-500'" :style="{ width: Math.min(stats.ramPercent, 100) + '%' }"></div>
             </div>
           </div>
+          <!-- Real server version -->
           <div class="bg-gray-950/80 p-3 rounded-lg border border-gray-900">
-            <span class="text-[10px] text-indigo-400/70 block font-mono uppercase tracking-widest mb-1">Engine</span>
-            <span class="text-sm font-mono font-bold text-gray-100" :title="serverInfo.software ? serverInfo.software : ''">
-              {{ serverInfo.software || 'Vanilla' }} {{ serverInfo.version || '' }}
+            <span class="text-[10px] text-indigo-400/70 block font-mono uppercase tracking-widest mb-1">Version</span>
+            <span class="text-sm font-mono font-bold text-gray-100 truncate block" :title="serverInfo.version || 'Unknown'">
+              {{ serverInfo.version || 'Unknown' }}
             </span>
           </div>
+          <!-- World name -->
           <div class="bg-gray-950/80 p-3 rounded-lg border border-gray-900">
             <span class="text-[10px] text-indigo-400/70 block font-mono uppercase tracking-widest mb-1">World</span>
-            <span class="text-xs font-mono font-bold text-emerald-400 truncate block" :title="serverInfo.map || 'world'">
-              {{ serverInfo.map || '—' }}
+            <span class="text-xs font-mono font-bold text-emerald-400 truncate block" :title="serverInfo.worldName || serverInfo.map || 'world'">
+              {{ serverInfo.worldName || serverInfo.map || '—' }}
+            </span>
+          </div>
+          <!-- Server uptime -->
+          <div class="bg-gray-950/80 p-3 rounded-lg border border-gray-900">
+            <span class="text-[10px] text-indigo-400/70 block font-mono uppercase tracking-widest mb-1">Time Online</span>
+            <span class="text-sm font-mono font-bold text-cyan-400 truncate block">
+              {{ onlineDuration }}
             </span>
           </div>
         </div>
-      </div>
     </div>
 
     <!-- Player Management Row -->
@@ -217,12 +207,29 @@ import SettingsPanel from './components/SettingsPanel.vue';
 // View switching
 const currentView = ref('dashboard');
 
-const serverInfo = ref({ status: 'offline', running: false, players: [] });
+const serverInfo = ref({ status: 'offline', running: false, startedAt: null, worldName: '', players: [] });
 const logs = ref([]);
 const terminal = ref(null);
 const commandInput = ref(null);
 const isToggling = ref(false);
 const isSendingCommand = ref(false);
+const currentTime = ref(Date.now());
+let uptimeInterval = null;
+
+const onlineDuration = computed(() => {
+  if (!serverInfo.value.running || !serverInfo.value.startedAt) return '—';
+
+  const elapsedSeconds = Math.max(0, Math.floor((currentTime.value - Date.parse(serverInfo.value.startedAt)) / 1000));
+  const days = Math.floor(elapsedSeconds / 86400);
+  const hours = Math.floor((elapsedSeconds % 86400) / 3600);
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+  const seconds = elapsedSeconds % 60;
+
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+});
 
 // Resource stats
 const stats = ref({ cpu: 0, ramUsed: 0, ramTotal: 0, ramPercent: 0 });
@@ -268,6 +275,8 @@ const fetchStatus = async () => {
     // Solo actualizamos el estado de Docker — NUNCA pisamos jugadores/datos de query
     serverInfo.value.running = res.running;
     serverInfo.value.status = res.status;
+    serverInfo.value.startedAt = res.startedAt || null;
+    serverInfo.value.worldName = res.worldName || '';
     // Solo establecemos jugadores si aún no hay datos de query
     if (!serverInfo.value.players || serverInfo.value.players.length === 0) {
       serverInfo.value.players = res.players || [];
@@ -433,6 +442,8 @@ const startPlayerPolling = () => {
       if (statusRes.status === 'fulfilled') {
         serverInfo.value.running = statusRes.value.running;
         serverInfo.value.status = statusRes.value.status;
+        serverInfo.value.startedAt = statusRes.value.startedAt || null;
+        serverInfo.value.worldName = statusRes.value.worldName || '';
       }
 
       // Query: datos completos (jugadores, versión, software, mapa)
@@ -476,6 +487,9 @@ onMounted(() => {
   startPlayerPolling();
   fetchStats();
   statsInterval = setInterval(fetchStats, 5000);
+  uptimeInterval = setInterval(() => {
+    currentTime.value = Date.now();
+  }, 1000);
   document.addEventListener('keydown', handleGlobalKeydown);
   
   socket = createSocketConnection();
@@ -505,6 +519,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopPlayerPolling();
   if (statsInterval) clearInterval(statsInterval);
+  if (uptimeInterval) clearInterval(uptimeInterval);
   document.removeEventListener('keydown', handleGlobalKeydown);
   if (socket) {
     socket.disconnect();

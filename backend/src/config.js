@@ -9,6 +9,7 @@ import 'dotenv/config.js';
 export const config = {
   // Server ports and networking
   PORT: parseInt(process.env.PORT || '3005', 10),
+  MC_HOST: process.env.MC_HOST || '127.0.0.1',
   MC_STATUS_PORT: parseInt(process.env.MC_STATUS_PORT || '25565', 10),
   MC_QUERY_PORT: parseInt(process.env.MC_QUERY_PORT || '25565', 10),
 

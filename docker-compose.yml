@@ -8,6 +8,7 @@ services:
       PORT: 3005
       DOCKER_SOCKET: /var/run/docker.sock
       TARGET_CONTAINER_NAME: ${TARGET_CONTAINER_NAME:-minecraft-server}
+      MC_HOST: ${MC_HOST:-minecraft-server}
       RCON_HOST: ${RCON_HOST:-minecraft-server}
       RCON_PORT: ${RCON_PORT:-25575}
       RCON_PASSWORD: ${RCON_PASSWORD:?Set RCON_PASSWORD in .env}
@@ -17,7 +18,7 @@ services:
       HOST_COMPOSE_FILE: /minecraft/docker-compose.yml
       BACKUP_DIR: /minecraft/backups
       API_TOKEN: ${API_TOKEN:?Set API_TOKEN in .env}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8081}
       ALLOW_UNSAFE_BACKUP: ${ALLOW_UNSAFE_BACKUP:-0}
       ENABLE_BACKUP_DOWNLOAD: ${ENABLE_BACKUP_DOWNLOAD:-1}
     volumes:
@@ -43,7 +44,7 @@ services:
         VITE_API_TOKEN: ${API_TOKEN:-}
     restart: unless-stopped
     ports:
-      - "${PANEL_PORT:-8080}:80"
+      - "${PANEL_PORT:-8081}:80"
     depends_on:
       backend:
         condition: service_healthy
