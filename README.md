@@ -1,135 +1,278 @@
-# MC Control Panel
+# MC Server - Control Panel
+
+A web-based control panel for managing a Minecraft server running in Docker.
+
+Monitor live server status, send console commands, manage players, edit `server.properties`, and create world backups from a single dashboard.
+
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
+## Features
+
+- **Live status control** — a single ONLINE/OFFLINE control in the header that starts and stops the Minecraft container with graceful shutdown (`save-all` via RCON)
+- **Server data** — CPU and RAM usage, real Minecraft version, world name, and online time
+- **Live console** — streaming Docker logs over Socket.IO with filtering, command history, and auto-reconnect when the server restarts
+- **Player management** — online player list with quick actions: OP, DEOP, TP, Kick, Ban, Gamemode, Whitelist, and Say
+- **MOTD editor** — colorized `§`-code editor with live preview and cursor-aware code insertion
+- **Settings** — edit `server.properties` with validation, automatic Docker Compose synchronization, and restart with status polling
+- **Backups** — safe world backups (save-off/save-on coordination), list, download, and delete
+- **Security** — optional bearer-token authentication for the API and WebSocket connections
+- **Docker-native** — packaged as two small images with an Nginx frontend that proxies `/api` and `/socket.io` to the backend
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser["Browser"] -->|"http :8081"| Nginx["Frontend (Nginx)<br/>serves Vue build"]
+    Nginx -->|"/api, /socket.io"| Backend["Backend (Node/Express)<br/>REST + Socket.IO"]
+    Backend -->|"docker.sock"| Docker["Docker Engine"]
+    Backend -->|"RCON :25575"| MC["Minecraft container"]
+    Backend -->|"status/query :25565"| MC
+    Docker --> MC
+    Backend -->|"bind mounts"| Data["Minecraft data, backups, compose file"]
+```
+
+- **Frontend** — Vue 3 + Vite, served by Nginx. Same-origin API calls: no backend URL is embedded in the production build.
+- **Backend** — Express + Socket.IO. Uses Dockerode for container operations, `minecraft-server-util` for status/query and RCON, and the Docker socket to inspect, start, stop, and stream logs from the Minecraft container.
+
+## Repository structure
+
+```
+mc-panel/
+├── backend/               # Express + Socket.IO API server
+│   ├── src/
+│   │   ├── index.js       # Routes, auth middleware, WebSocket log streaming
+│   │   ├── config.js      # Environment-based configuration
+│   │   └── dockerService.js # Docker, RCON, properties, and backup operations
+│   ├── Dockerfile
+│   └── .env.example
+├── frontend/              # Vue 3 + Vite application
+│   ├── src/
+│   │   ├── App.vue        # Dashboard layout and polling logic
+│   │   ├── lib/api.js     # Centralized API/Socket.IO client
+│   │   └── components/    # PlayerList, FastCommands, SettingsPanel, ...
+│   ├── nginx.conf         # SPA fallback + API/WebSocket reverse proxy
+│   ├── Dockerfile
+│   └── .env.example
+├── docker-compose.yml     # Panel stack (backend + frontend)
+├── .env.example           # Compose environment template
+└── DOCKER.md              # Detailed Docker deployment guide
+```
+
+## Quick start (Docker)
+
+Requires an existing Minecraft deployment with its container named `minecraft-server`, data in `minecraft_data/`, and RCON enabled.
+
+```bash
+# 1. Create the shared network if needed
+docker network create stark_net
+
+# 2. Configure the panel
+cp .env.example .env
+#    Edit MINECRAFT_ROOT, RCON_PASSWORD, API_TOKEN, DOCKER_SOCKET_GID
+
+# 3. Build and start
+docker compose up -d --build
+
+# 4. Verify
+curl http://localhost:8081/api/health
+```
+
+Open `http://localhost:8081` and log in — the dashboard is ready.
+
+See [DOCKER.md](DOCKER.md) for the complete step-by-step deployment, security notes, and troubleshooting.
+
+### Required configuration
+
+| Variable | Description |
+|---|---|
+| `MINECRAFT_ROOT` | Host directory containing `minecraft_data/`, `backups/`, and `docker-compose.yml` |
+| `RCON_PASSWORD` | Must match the Minecraft container's RCON password |
+| `API_TOKEN` | Strong token shared between backend and the frontend build |
+| `DOCKER_SOCKET_GID` | Group ID of `/var/run/docker.sock` (`stat -c '%g' /var/run/docker.sock`) |
+| `PANEL_PORT` | Published panel port (default `8081`) |
+
+### Networking
+
+The panel runs as a separate Compose project and attaches to your Minecraft stack's external network (`stark_net` by default). The backend reaches Minecraft through:
+
+- `minecraft-server:25575` — RCON commands and graceful save
+- `minecraft-server:25565` — server status and query probes (`MC_HOST`)
+- `/var/run/docker.sock` — container inspection, start/stop, stats, and log streaming
+
+The backend is **not** published to the host; only the Nginx frontend port is exposed.
 
 ## Local development
 
-From the repository root, install dependencies in both applications and the root process runner:
+### Prerequisites
+
+- Node.js ≥ 18
+- Docker Engine with access to `/var/run/docker.sock`
+- A running `minecraft-server` container with RCON enabled
+
+### Install and run
 
 ```bash
 npm install
 npm --prefix backend install
 npm --prefix frontend install
-```
 
-Start the backend and Vite frontend together:
-
-```bash
 npm run dev
 ```
 
-This starts the backend on `http://localhost:3005` and Vite on `http://localhost:5173`. The frontend is bound to `0.0.0.0` so it can be opened through a forwarded or externally exposed port. Vite proxies `/api` and `/socket.io` to the backend.
+This starts the backend on `http://localhost:3005` and Vite on `http://localhost:5173` (bound to `0.0.0.0`). Vite proxies `/api` and `/socket.io` to the backend.
 
-To start them separately:
+### Scripts
 
-```bash
-npm run dev:backend
-npm run dev:frontend
+| Command | Description |
+|---|---|
+| `npm run dev` | Start backend and frontend together |
+| `npm run dev:backend` | Start only the backend (nodemon) |
+| `npm run dev:frontend` | Start only the Vite server |
+| `npm run build` | Build the production frontend |
+| `npm start` | Run the backend production server |
+
+### Development environment
+
+Backend variables can be set in `backend/.env` (see [backend/.env.example](backend/.env.example)). In local development the defaults work with a Minecraft stack published on the host:
+
+- `MC_HOST=127.0.0.1` — status/query probes target localhost
+- `RCON_HOST=127.0.0.1` — RCON on localhost
+- `HOST_DATA_DIR`, `HOST_COMPOSE_FILE`, `BACKUP_DIR` — point to the host Minecraft paths
+
+Frontend variables are build-time (`frontend/.env.local`):
+
+| Variable | Purpose |
+|---|---|
+| `VITE_API_URL` | Backend URL; leave unset for same-origin/proxy usage |
+| `VITE_API_TOKEN` | Token sent as `Authorization: Bearer` when the backend requires auth |
+
+## API reference
+
+Base URL: `http://localhost:3005` (dev) or through the Nginx proxy in Docker.
+
+If `API_TOKEN` is configured, all endpoints except `/api/health` require:
+
+```http
+Authorization: Bearer <API_TOKEN>
 ```
 
-The backend must be running before the panel can load server status or send commands.
+Socket.IO connections pass the token in the auth payload:
 
-# MC Control Panel — Frontend
-
-A Vue 3 + Vite control panel for managing a Minecraft server running in Docker.
-
-## Features
-
-- **Real-time server status** — online/offline state, CPU/RAM gauges, engine version
-- **Live console** — tail of Docker logs with filtering and command history (`↑/↓` keys)
-- **Player management** — online player list with quick commands (op/deop/tp/kick/ban/gamemode)
-- **Fast commands** — one-click actions for common server tasks
-- **MOTD editor** — colorized Minecraft `§`-code editor with live preview
-- **Settings** — edit `server.properties` and restart server
-- **Backups** — create/list/delete world backups with integrity checks
-- **WebSocket logs** — live streaming of Minecraft server console
-
-## Setup
-
-### Prerequisites
-- Node.js ≥ 18
-- Running mc-panel backend on `http://localhost:3005` (or configure `VITE_API_URL`)
-
-### Installation
-
-```bash
-npm install
+```js
+io(url, { auth: { token: API_TOKEN } })
 ```
 
-### Development
-
-```bash
-npm run dev
-```
-
-The dev server runs on `http://localhost:5173` (default Vite port). API requests to `/api/*` are proxied to `http://localhost:3005` via Vite's dev proxy.
-
-**Environment variables** (in `.env.local`):
-- `VITE_API_URL` — Backend URL (defaults to relative `/api` when unset, requires Vite proxy)
-- `VITE_API_TOKEN` — API token if backend requires authentication
-
-### Build
-
-```bash
-npm run build
-```
-
-Outputs to `dist/`. The backend does **not** automatically serve the frontend; deploy `dist/` separately or configure reverse-proxy routing.
-
-### Preview
-
-```bash
-npm run preview
-```
-
-Runs a local preview of the production build.
-
-## Architecture
-
-- **`src/main.js`** — Vue app entry point
-- **`src/App.vue`** — Main layout: header, dashboard/settings view switcher, server status, console
-- **`src/components/`** — Reusable components:
-  - `PlayerList.vue` — Shows online players and server metadata
-  - `FastCommands.vue` — Quick-command buttons (op, tp, kick, etc.)
-  - `SettingsPanel.vue` — Edit server properties, restart, backups
-  - `BackupManager.vue` — Create, list, delete backups
-  - `MotdEditor.vue` — MOTD colorizer with `§`-code support
-
-## API
-
-Expects a backend compatible with mc-panel-backend (see `../backend/README.md`).
-
-### Key endpoints (all require `Authorization: Bearer <token>` if `API_TOKEN` is set)
-
-| Endpoint | Method | Purpose |
+| Endpoint | Method | Description |
 |---|---|---|
-| `/api/health` | GET | Health check (no auth) |
-| `/api/server/status` | GET | Server running state, player count |
-| `/api/server/query` | GET | Extended info (version, software, players list, MOTD) |
-| `/api/server/stats` | GET | CPU/RAM usage |
-| `/api/server/start` | POST | Start container |
-| `/api/server/stop` | POST | Stop container |
-| `/api/server/command` | POST | Send console command |
-| `/api/server/properties` | GET/POST | Read/write `server.properties` |
-| `/api/server/backups` | GET/POST/DELETE | List/create/delete backups |
+| `/api/health` | GET | Health check, Docker reachability (no auth) |
+| `/api/server/status` | GET | Running state, start time, world name, player count |
+| `/api/server/query` | GET | Full query: MOTD, version, software, plugins, map, players (UDP with TCP fallback) |
+| `/api/server/stats` | GET | CPU (`0–100%` of host capacity) and RAM (against the container's `MEMORY` limit) |
+| `/api/server/start` | POST | Start the Minecraft container |
+| `/api/server/stop` | POST | Graceful stop (`save-all` via RCON, then stop) |
+| `/api/server/command` | POST | Send a console command via RCON |
+| `/api/server/properties` | GET | Read `server.properties` (RCON password redacted) |
+| `/api/server/properties` | POST | Update validated properties and sync the Compose file |
+| `/api/server/backups` | GET | List backups |
+| `/api/server/backups` | POST | Create a backup |
+| `/api/server/backups/:name` | DELETE | Delete a backup |
+| `/api/server/backups/:name/download` | GET | Download a backup archive |
 
-## Known Limitations
+### Example
 
-- **Backend serves frontend?** No — Vite app is dev-server only; production requires a separate HTTP server or reverse-proxy.
-- **Restore from backup?** Not implemented; backups are created and downloaded but cannot be auto-restored.
-- **Live property editing** — Changes may be lost if the server restarts while running (Minecraft rewrites the file on shutdown).
+```bash
+curl -X POST http://localhost:3005/api/server/command \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{"command": "say Hello!"}'
+```
+
+### WebSocket events
+
+The backend emits `log-line` events on the Socket.IO connection with live Minecraft console output. It automatically re-attaches to the container log stream after restarts.
+
+## Backups
+
+Backups are created safely against a live world:
+
+1. RCON `save-off` disables automatic saves
+2. `save-all` flushes pending writes
+3. The world directory is archived with `tar`
+4. `save-on` restores automatic saving
+
+Backups are serialized (only one runs at a time). If `save-off` fails, the backup is aborted unless `ALLOW_UNSAFE_BACKUP=1`. Backups live in `BACKUP_DIR` (in Docker: `$MINECRAFT_ROOT/backups`) and are never copied into images.
+
+## Configuration reference
+
+### Backend (`backend/.env`)
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3005` | Backend HTTP/WebSocket port |
+| `MC_HOST` | `127.0.0.1` | Minecraft host for status/query probes (`minecraft-server` in Docker) |
+| `MC_STATUS_PORT` | `25565` | Minecraft status port |
+| `MC_QUERY_PORT` | `25565` | Minecraft query port |
+| `DOCKER_SOCKET` | `/var/run/docker.sock` | Docker socket path |
+| `TARGET_CONTAINER_NAME` | `minecraft-server` | Managed container |
+| `RCON_HOST` | `127.0.0.1` | RCON host |
+| `RCON_PORT` | `25575` | RCON port |
+| `RCON_PASSWORD` | — | RCON password (must match Minecraft) |
+| `HOST_DATA_DIR` | — | Minecraft data directory |
+| `HOST_COMPOSE_FILE` | — | Minecraft Compose file to keep in sync |
+| `BACKUP_DIR` | — | Backup storage directory |
+| `API_TOKEN` | unset | Enables Bearer auth when set |
+| `CORS_ORIGIN` | `*` | CORS origin; restrict in production |
+| `ALLOW_UNSAFE_BACKUP` | `0` | Allow backups when `save-off` fails |
+| `ENABLE_BACKUP_DOWNLOAD` | `1` | Enable the backup download endpoint |
+
+### Compose (`.env`)
+
+See [.env.example](.env.example) for the complete list. Key values:
+
+| Variable | Default | Description |
+|---|---|---|
+| `MINECRAFT_ROOT` | `/home/kukkimonsuta/docker/minecraft` | Host Minecraft directory |
+| `PANEL_PORT` | `8081` | Published panel port |
+| `MC_HOST` | `minecraft-server` | In-container Minecraft host |
+| `MINECRAFT_NETWORK` | `stark_net` | External network joining the Minecraft stack |
+| `DOCKER_SOCKET_GID` | `999` | Host Docker socket group |
+| `API_TOKEN` | required | Panel authentication token |
+
+## Security
+
+- The backend mounts `/var/run/docker.sock`, which grants control over the Docker host. The backend port is never published; only the frontend is exposed.
+- Use a strong `API_TOKEN`. The production frontend embeds it at build time, so rebuild the frontend image after changing it.
+- Keep `.env` out of version control and restrict `CORS_ORIGIN` when the frontend and API are not same-origin.
+- For exposure beyond localhost, place the panel behind TLS (e.g., a reverse proxy).
 
 ## Troubleshooting
 
-**Build fails with "Failed to resolve import"**
-- Ensure backend dependencies are installed. If running `npm install` only in `frontend/`, it may fail if `axios` or `socket.io-client` aren't in `package.json`.
+**Panel shows `401` / data does not load**
+- The backend has `API_TOKEN` set but the frontend was built without the matching `VITE_API_TOKEN`. Rebuild with `docker compose up -d --build`.
 
-**API calls fail with 401**
-- Backend requires `API_TOKEN`. Set `VITE_API_TOKEN` environment variable to match backend's `API_TOKEN`.
+**Version, players, or MOTD are missing in Docker**
+- Verify `MC_HOST=minecraft-server` and that both Compose projects share the same external network.
 
-**Connection refused on `localhost:3005`**
-- Backend is not running. Start with `npm run dev` or `npm start` in the `backend/` directory.
+**World name shows `—`**
+- The panel reads `level-name` from `server.properties`. If absent, it falls back to the world directory name. Verify the `MINECRAFT_ROOT` mount.
 
-**WebSocket connection fails**
-- Check `VITE_API_URL` environment variable and ensure `/socket.io` proxy is configured.
+**Backend is unhealthy**
+- Check `DOCKER_SOCKET_GID` against `stat -c '%g' /var/run/docker.sock` and that `minecraft-server` exists.
+
+**RCON commands fail**
+- Confirm `RCON_PASSWORD` matches the Minecraft container and `RCON_HOST=minecraft-server` in Docker.
+
+**Port `8081` is already in use**
+- Change `PANEL_PORT` in `.env` and run `docker compose up -d --force-recreate`.
+
+**Dev proxy errors (`ECONNREFUSED 127.0.0.1:3005`)**
+- The backend is not running. Use `npm run dev` from the repository root to start both services.
+
+## Known limitations
+
+- Restoring a backup is not implemented; backups can be created, listed, downloaded, and deleted.
+- The `API_TOKEN` is embedded in the production frontend bundle (build-time argument). Rotating the token requires rebuilding the frontend image.
+- Editing properties while the server is running may be overwritten when Minecraft rewrites `server.properties` on shutdown.
 
 ## License
 
