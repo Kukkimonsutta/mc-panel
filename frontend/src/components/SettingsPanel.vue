@@ -8,15 +8,16 @@
         <svg class="w-4 h-4 text-fuchsia-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16m-7 6h7"/></svg>
         <span class="text-xs font-mono uppercase tracking-widest text-fuchsia-400">Edit MOTD</span>
         <span v-if="motdDirty" class="text-[9px] font-mono text-amber-400 bg-amber-950/30 px-2 py-0.5 rounded ml-auto">Unsaved</span>
-        <button v-if="motdDirty" @click.stop="saveMotd" :disabled="saving" class="ml-auto px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-fuchsia-800 text-white rounded border border-fuchsia-500 transition-colors shrink-0">
+        <button @click.stop="saveMotd" :disabled="saving || !motdDirty" class="ml-auto px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-wider bg-fuchsia-600 hover:bg-fuchsia-500 disabled:bg-fuchsia-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded border border-fuchsia-500 transition-colors shrink-0">
           {{ saving ? 'Saving…' : 'Save' }}
         </button>
       </button>
       <div v-if="motdOpen && !loading" class="p-4 sm:p-5">
         <MotdEditor
           :model-value="motdLocal"
-          @update:model-value="motdLocal = $event; motdDirty = true"
+          @update:model-value="motdLocal = $event; motdDirty = true; motdError = ''"
         />
+        <div v-if="motdError" class="mt-3 text-[10px] font-mono px-3 py-2 rounded-lg border text-rose-400 border-rose-900/40 bg-rose-950/20">{{ motdError }}</div>
       </div>
     </div>
 
@@ -88,7 +89,7 @@
         <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
         <span class="text-xs font-mono uppercase tracking-widest text-emerald-400">Backups</span>
       </button>
-      <div v-if="backupsOpen">
+      <div v-if="backupsOpen" class="p-4 sm:p-5">
         <BackupManager />
       </div>
     </div>
@@ -113,7 +114,7 @@
         <div class="bg-gray-900 border border-emerald-800/50 rounded-xl p-6 max-w-sm w-full shadow-2xl">
           <div class="flex items-center gap-2 mb-3">
             <svg class="w-5 h-5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-            <h3 class="text-sm font-mono font-bold text-emerald-400">Settings Saved</h3>
+            <h3 class="text-sm font-mono font-bold text-emerald-400">{{ restartPrompt.title }}</h3>
           </div>
           <p class="text-xs font-mono text-gray-400 mb-5">{{ restartPrompt.message }}</p>
           <div class="flex gap-2 justify-end">
@@ -141,6 +142,7 @@ const backupsOpen = ref(false);
 // MOTD
 const motdLocal = ref('');
 const motdDirty = ref(false);
+const motdError = ref('');
 
 // Properties
 const propsData = ref({});
@@ -153,7 +155,7 @@ const saving = ref(false);
 
 // Popups
 const confirm = ref({ show: false, title: '', message: '', action: '', onConfirm: () => {} });
-const restartPrompt = ref({ show: false, message: '' });
+const restartPrompt = ref({ show: false, title: '', message: '' });
 
 const propCount = computed(() => Object.keys(propsData.value).length);
 
@@ -217,24 +219,23 @@ function startEditing() {
 
 // --- Save MOTD ---
 function saveMotd() {
-  confirm.value = {
-    show: true,
-    title: 'Save MOTD?',
-    message: 'This will update the server list message. A restart is required to see the change in-game.',
-    action: 'Save MOTD',
-    onConfirm: doSaveMotd
-  };
+  doSaveMotd();
 }
 async function doSaveMotd() {
   saving.value = true;
+  motdError.value = '';
   try {
     const res = await api.updateProperties({ motd: motdLocal.value });
     if (!res.success) throw new Error(res.error || 'Failed to save MOTD');
     propsData.value.motd = motdLocal.value;
     motdDirty.value = false;
-    restartPrompt.value = { show: true, message: 'MOTD saved. Restart the server to apply the new message.' };
+    restartPrompt.value = {
+      show: true,
+      title: 'MOTD Saved',
+      message: 'The MOTD was saved to server.properties. It will not be applied until the server restarts.'
+    };
   } catch (err) {
-    error.value = `Save failed: ${err.message}`;
+    motdError.value = `Save failed: ${err.message}`;
   } finally {
     saving.value = false;
   }
@@ -269,7 +270,11 @@ async function doSaveProps() {
     propsData.value = { ...propsLocal.value };
     propsDirty.value = false;
     editing.value = false;
-    restartPrompt.value = { show: true, message: 'Server settings saved. Restart to apply changes.' };
+    restartPrompt.value = {
+      show: true,
+      title: 'Settings Saved',
+      message: 'Server settings saved to server.properties. They will be applied on the next restart.'
+    };
   } catch (err) {
     error.value = `Save failed: ${err.message}`;
   } finally {

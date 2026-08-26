@@ -16,12 +16,12 @@
         <div class="flex items-center gap-1 bg-gray-950 rounded-lg border border-gray-800 p-0.5">
           <button
             @click="currentView = 'dashboard'"
-            class="px-2.5 sm:px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-md transition-all"
+            class="flex-1 sm:flex-none text-center px-2.5 sm:px-3 py-2.5 sm:py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-md transition-all"
             :class="currentView === 'dashboard' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'"
           >Dashboard</button>
           <button
             @click="currentView = 'settings'"
-            class="px-2.5 sm:px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-md transition-all"
+            class="flex-1 sm:flex-none text-center px-2.5 sm:px-3 py-2.5 sm:py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-md transition-all"
             :class="currentView === 'settings' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'"
           >Settings</button>
         </div>
@@ -32,7 +32,7 @@
         @click="togglePower"
         :disabled="isToggling"
         :aria-label="serverInfo.running ? 'Stop Minecraft server' : 'Start Minecraft server'"
-        class="flex items-center gap-3 bg-gray-950 px-3 py-2 rounded-lg border transition-all duration-300 disabled:opacity-50 disabled:cursor-wait"
+        class="flex items-center justify-center sm:justify-start gap-3 bg-gray-950 px-3 py-2.5 rounded-lg border transition-all duration-300 w-full sm:w-auto disabled:opacity-50 disabled:cursor-wait"
         :class="serverInfo.running ? 'border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-rose-500/30 shadow-[0_0_15px_rgba(244,63,94,0.15)]'"
       >
         <span 
@@ -79,8 +79,8 @@
           <!-- RAM Gauge -->
           <div class="bg-gray-950/80 p-3 rounded-lg border border-gray-900">
             <span class="text-[10px] text-indigo-400/70 block font-mono uppercase tracking-widest mb-1">RAM</span>
-            <div class="flex items-end gap-1.5">
-              <span class="text-sm font-mono font-bold" :class="stats.ramPercent > 80 ? 'text-rose-400' : stats.ramPercent > 50 ? 'text-amber-400' : 'text-emerald-400'">{{ stats.ramUsed }}<span class="text-[10px] text-gray-600">/{{ stats.ramTotal }}MB</span></span>
+            <div class="flex items-end gap-1.5 min-w-0">
+              <span class="text-xs sm:text-sm font-mono font-bold truncate" :class="stats.ramPercent > 80 ? 'text-rose-400' : stats.ramPercent > 50 ? 'text-amber-400' : 'text-emerald-400'">{{ stats.ramUsed }}<span class="text-[10px] text-gray-600">/{{ stats.ramTotal }}MB</span></span>
             </div>
             <div class="mt-1.5 h-1.5 bg-gray-800 rounded-full overflow-hidden">
               <div class="h-full rounded-full transition-all duration-700" :class="stats.ramPercent > 80 ? 'bg-rose-500' : stats.ramPercent > 50 ? 'bg-amber-500' : 'bg-emerald-500'" :style="{ width: Math.min(stats.ramPercent, 100) + '%' }"></div>
@@ -145,7 +145,7 @@
             v-model="logFilter"
             type="text"
             placeholder="Filter logs..."
-            class="w-36 bg-gray-950 border border-gray-800 rounded px-2.5 py-1 text-[10px] font-mono text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-700/50 transition-colors"
+            class="w-28 sm:w-36 bg-gray-950 border border-gray-800 rounded px-2.5 py-1 text-[10px] font-mono text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-700/50 transition-colors"
             spellcheck="false"
           />
           <button 

@@ -1,14 +1,7 @@
 <template>
-  <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 rounded-xl border border-indigo-950/50 overflow-hidden">
-    <div class="bg-gray-900/40 px-5 py-3 border-b border-indigo-950/40 flex items-center gap-2">
-      <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-      <span class="text-xs font-mono uppercase tracking-widest text-emerald-400">World Backups //</span>
-      <span class="text-[10px] font-mono text-gray-600 ml-auto">{{ backups.length }} stored</span>
-    </div>
-
-    <div class="p-5 space-y-4">
+  <div class="space-y-4">
       <!-- Create Backup Button -->
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
         <button
           @click="doCreate"
           :disabled="creating"
@@ -19,6 +12,7 @@
           {{ creating ? 'Backing up world…' : 'Create Backup' }}
         </button>
         <span class="text-[10px] font-mono text-gray-500">Server stays online during backup</span>
+        <span class="text-[10px] font-mono text-gray-600 ml-auto">{{ backups.length }} stored</span>
       </div>
 
       <!-- Feedback -->
@@ -54,7 +48,6 @@
           </button>
         </div>
       </div>
-    </div>
 
     <Transition name="fade">
       <div v-if="deleteConfirm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="deleteConfirm = null">

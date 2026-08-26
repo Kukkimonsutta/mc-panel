@@ -38,7 +38,7 @@
           :key="c.code"
           @click="insertCode('§' + c.code)"
           :title="c.name"
-          class="w-6 h-6 rounded text-[10px] font-bold font-mono border transition-all hover:scale-110 active:scale-95"
+          class="w-8 h-8 sm:w-6 sm:h-6 rounded text-xs sm:text-[10px] font-bold font-mono border transition-all hover:scale-110 active:scale-95"
           :style="{ background: c.hex, color: c.textColor }"
           :class="c.code === 'r' ? 'border-gray-600' : 'border-transparent'"
         >
@@ -56,14 +56,14 @@
           :key="f.code"
           @click="insertCode('§' + f.code)"
           :title="f.name"
-          class="px-2 py-1 text-[10px] font-mono font-bold uppercase rounded border border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white hover:border-gray-600 transition-all"
+          class="px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-mono font-bold uppercase rounded border border-gray-700 bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-white hover:border-gray-600 transition-all"
         >
           {{ f.label }}
         </button>
         <button
           @click="insertCode('§r')"
           title="Reset formatting"
-          class="px-2 py-1 text-[10px] font-mono font-bold uppercase rounded border border-rose-900/50 bg-rose-950/30 text-rose-400 hover:bg-rose-900/40 transition-all"
+          class="px-3 py-2 sm:px-2 sm:py-1 text-xs sm:text-[10px] font-mono font-bold uppercase rounded border border-rose-900/50 bg-rose-950/30 text-rose-400 hover:bg-rose-900/40 transition-all"
         >
           Reset
         </button>
@@ -77,6 +77,7 @@
         ref="textInput"
         :value="modelValue"
         @input="$emit('update:modelValue', ($event.target).value)"
+        @keydown.enter.prevent="insertCode('\\n')"
         rows="2"
         spellcheck="false"
         class="w-full bg-gray-900 border border-gray-800 rounded px-3 py-2 text-xs font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-fuchsia-700/50 transition-colors resize-none"

@@ -170,6 +170,14 @@ export async function writeServerProperties(updates) {
       if (typeof value !== 'string') {
         return { success: false, error: `Invalid value type for ${key}` };
       }
+      // MOTD may contain real newlines typed in the editor — convert them to literal \n escapes
+      if (key === 'motd') {
+        updates[key] = value.replace(/\r?\n/g, '\\n');
+        if (updates[key].includes('\0')) {
+          return { success: false, error: `Invalid character in value for ${key}` };
+        }
+        continue;
+      }
       // Reject values with newlines or NUL characters (injection prevention)
       if (value.includes('\n') || value.includes('\r') || value.includes('\0')) {
         return { success: false, error: `Invalid character in value for ${key}` };
