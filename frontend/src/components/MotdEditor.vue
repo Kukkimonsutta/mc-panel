@@ -9,8 +9,9 @@
     <div class="bg-[#1a1a2e] border-2 border-[#2a2a4a] rounded-md p-3 relative overflow-hidden">
       <div class="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none"></div>
       <div class="relative flex items-center gap-3">
-        <!-- Fake server icon -->
-        <div class="w-10 h-10 rounded-sm bg-gradient-to-br from-emerald-700 to-emerald-900 flex items-center justify-center shrink-0 ring-1 ring-white/10">
+        <!-- Server icon (real icon when available) -->
+        <img v-if="iconUrl" :src="iconUrl" alt="server icon" class="w-10 h-10 rounded-sm ring-1 ring-white/10 shrink-0" style="image-rendering: pixelated;" />
+        <div v-else class="w-10 h-10 rounded-sm bg-gradient-to-br from-emerald-700 to-emerald-900 flex items-center justify-center shrink-0 ring-1 ring-white/10">
           <svg class="w-6 h-6 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5"/></svg>
         </div>
         <!-- MOTD text -->
@@ -101,7 +102,8 @@ import { computed, ref } from 'vue';
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
-  playerCount: { type: String, default: '1/10' }
+  playerCount: { type: String, default: '1/10' },
+  iconUrl: { type: String, default: '' }
 });
 
 const emit = defineEmits(['update:modelValue']);

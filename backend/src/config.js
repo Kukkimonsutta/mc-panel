@@ -44,6 +44,11 @@ export const config = {
   // Backup safety
   ALLOW_UNSAFE_BACKUP: process.env.ALLOW_UNSAFE_BACKUP === '1', // If set, backup proceeds even if save-off fails
 
+  // Scheduled backups (initial defaults; adjustable from the panel UI, persisted in BACKUP_DIR)
+  BACKUP_SCHEDULE_ENABLED: process.env.BACKUP_SCHEDULE_ENABLED === '1',
+  BACKUP_INTERVAL_HOURS: parseFloat(process.env.BACKUP_INTERVAL_HOURS || '24') || 24,
+  BACKUP_RETENTION: parseInt(process.env.BACKUP_RETENTION || '10', 10) || 0, // 0 = unlimited
+
   // Feature flags
   ENABLE_BACKUP_DOWNLOAD: process.env.ENABLE_BACKUP_DOWNLOAD !== '0', // Enabled by default
 };

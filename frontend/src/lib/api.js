@@ -37,7 +37,12 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    // Network/HTTP errors pass through
+    // Surface backend error messages ({ success: false, error }) instead of generic HTTP text.
+    // Skip Blob responses (e.g. failed file downloads) — those are parsed by callers.
+    const data = error.response?.data;
+    if (data && typeof data === 'object' && !(data instanceof Blob) && (data.error || data.message)) {
+      error.message = data.error || data.message;
+    }
     return Promise.reject(error);
   }
 );
@@ -170,10 +175,133 @@ export const api = {
   },
 
   /**
-   * Download a backup file
+   * Download a backup file via authenticated fetch (Bearer header), then
+   * trigger a browser download. Never exposes the token in URLs.
    */
-  downloadBackup(name) {
-    return `${API_URL}/api/server/backups/${name}/download${API_TOKEN ? `?token=${API_TOKEN}` : ''}`;
+  async downloadBackup(name) {
+    let res;
+    try {
+      res = await apiClient.get(`/api/server/backups/${name}/download`, {
+        responseType: 'blob',
+        timeout: 0, // Large worlds can take a while to download
+      });
+    } catch (e) {
+      // Extract backend error message from the blob body if present
+      if (e.response?.data instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await e.response.data.text());
+          throw new Error(parsed.error || 'Download failed');
+        } catch (parseErr) {
+          if (parseErr instanceof SyntaxError) throw new Error('Download failed');
+          throw parseErr;
+        }
+      }
+      throw new Error(e.message || 'Download failed');
+    }
+
+    // Prefer the filename sent by the server (Content-Disposition)
+    let filename = name;
+    const disposition = res.headers?.['content-disposition'] || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    if (match) filename = match[1];
+
+    const url = URL.createObjectURL(res.data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { success: true, name: filename };
+  },
+
+  /**
+   * Start restoring a backup (runs server-side as a background job)
+   */
+  async restoreBackup(name) {
+    const res = await apiClient.post(`/api/server/backups/${name}/restore`);
+    return res.data;
+  },
+
+  /**
+   * Get the current restore job status
+   */
+  async getRestoreStatus() {
+    const res = await apiClient.get('/api/server/restore/status');
+    return res.data;
+  },
+
+  /**
+   * Get the backup schedule
+   */
+  async getBackupSchedule() {
+    const res = await apiClient.get('/api/server/backups/schedule');
+    return res.data;
+  },
+
+  /**
+   * Update the backup schedule
+   */
+  async setBackupSchedule(schedule) {
+    const res = await apiClient.post('/api/server/backups/schedule', schedule);
+    return res.data;
+  },
+
+  /**
+   * Player management action (kick, ban, unban, op, deop) via RCON
+   */
+  async playerAction({ action, player, reason }) {
+    const res = await apiClient.post('/api/server/players/action', { action, player, reason });
+    return res.data;
+  },
+
+  /**
+   * Temporary ban — the player is unbanned automatically after N hours
+   */
+  async tempBan({ player, reason, hours }) {
+    const res = await apiClient.post('/api/server/players/tempban', { player, reason, hours });
+    return res.data;
+  },
+
+  /**
+   * List whitelisted players
+   */
+  async getWhitelist() {
+    const res = await apiClient.get('/api/server/players/whitelist');
+    return res.data;
+  },
+
+  /**
+   * Whitelist action (add, remove, on, off, reload)
+   */
+  async whitelistAction({ action, player }) {
+    const res = await apiClient.post('/api/server/players/whitelist', { action, player });
+    return res.data;
+  },
+
+  /**
+   * List banned players
+   */
+  async getBans() {
+    const res = await apiClient.get('/api/server/players/bans');
+    return res.data;
+  },
+
+  /**
+   * Get the current server icon (data URL, or null if none)
+   */
+  async getIcon() {
+    const res = await apiClient.get('/api/server/icon');
+    return res.data;
+  },
+
+  /**
+   * Save a new server icon (64x64 PNG data URL)
+   */
+  async saveIcon(data) {
+    const res = await apiClient.post('/api/server/icon', { data });
+    return res.data;
   },
 
   /**

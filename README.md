@@ -11,10 +11,11 @@ Monitor live server status, send console commands, manage players, edit `server.
 - **Live status control** — a single ONLINE/OFFLINE control in the header that starts and stops the Minecraft container with graceful shutdown (`save-all` via RCON)
 - **Server data** — CPU and RAM usage, real Minecraft version, world name, and online time
 - **Live console** — streaming Docker logs over Socket.IO with filtering, command history, and auto-reconnect when the server restarts
-- **Player management** — online player list with quick actions: OP, DEOP, TP, Kick, Ban, Gamemode, Whitelist, and Say
+- **Player management** — online player list with kick, ban, and op actions, plus a whitelist manager and ban list (unban, ban by name, temporary bans with automatic unban) via RCON
 - **MOTD editor** — colorized `§`-code editor with live preview and cursor-aware code insertion
+- **Server icon editor** — 64×64 pixel editor with palette, fill, procedural generators, and image upload; writes `server-icon.png`
 - **Settings** — edit `server.properties` with validation, automatic Docker Compose synchronization, and restart with status polling
-- **Backups** — safe world backups (save-off/save-on coordination), list, download, and delete
+- **Backups** — safe world backups (save-off/save-on coordination), list, download, delete, restore, scheduled backups, and automatic retention
 - **Security** — optional bearer-token authentication for the API and WebSocket connections
 - **Docker-native** — packaged as two small images with an Nginx frontend that proxies `/api` and `/socket.io` to the backend
 
@@ -176,7 +177,18 @@ io(url, { auth: { token: API_TOKEN } })
 | `/api/server/backups` | GET | List backups |
 | `/api/server/backups` | POST | Create a backup |
 | `/api/server/backups/:name` | DELETE | Delete a backup |
-| `/api/server/backups/:name/download` | GET | Download a backup archive |
+| `/api/server/backups/:name/download` | GET | Download a backup archive (Bearer auth, no token in URL) |
+| `/api/server/backups/:name/restore` | POST | Start a world restore (background job) |
+| `/api/server/restore/status` | GET | Restore job progress (`phase`, `running`, `result`) |
+| `/api/server/backups/schedule` | GET | Read the backup schedule |
+| `/api/server/backups/schedule` | POST | Update the backup schedule |
+| `/api/server/players/action` | POST | `kick`, `ban`, `unban`, `op`, `deop` via RCON |
+| `/api/server/players/whitelist` | GET | List whitelisted players |
+| `/api/server/players/whitelist` | POST | `add`, `remove`, `on`, `off`, `reload` |
+| `/api/server/players/bans` | GET | List banned players (from `banned-players.json`) |
+| `/api/server/players/tempban` | POST | Temporary ban; auto-pardon after `hours` |
+| `/api/server/icon` | GET | Get the current server icon (data URL) |
+| `/api/server/icon` | POST | Save a 64×64 PNG server icon |
 
 ### Example
 
@@ -202,6 +214,21 @@ Backups are created safely against a live world:
 
 Backups are serialized (only one runs at a time). If `save-off` fails, the backup is aborted unless `ALLOW_UNSAFE_BACKUP=1`. Backups live in `BACKUP_DIR` (in Docker: `$MINECRAFT_ROOT/backups`) and are never copied into images.
 
+### Restore
+
+Restoring runs as a background job so large worlds don't time out HTTP requests:
+
+1. The server is stopped gracefully (`save-all` via RCON, then container stop)
+2. A safety snapshot of the current world is created (`pre-restore-*.tar.gz`)
+3. The current world folder is moved aside and the backup is extracted in its place
+4. The server is started again; on failure the old world is rolled back
+
+The panel polls `/api/server/restore/status` and shows progress (stopping → snapshot → extracting → starting). Safety snapshots are kept and are exempt from retention cleanup.
+
+### Scheduled backups & retention
+
+The panel can run backups automatically every N hours (off by default) and prune old ones, keeping the most recent N. The schedule is stored as a JSON file inside the backups directory, so it survives container recreation and is editable from the Settings page. Initial defaults come from `BACKUP_SCHEDULE_ENABLED`, `BACKUP_INTERVAL_HOURS`, and `BACKUP_RETENTION`.
+
 ## Configuration reference
 
 ### Backend (`backend/.env`)
@@ -224,6 +251,9 @@ Backups are serialized (only one runs at a time). If `save-off` fails, the backu
 | `CORS_ORIGIN` | `*` | CORS origin; restrict in production |
 | `ALLOW_UNSAFE_BACKUP` | `0` | Allow backups when `save-off` fails |
 | `ENABLE_BACKUP_DOWNLOAD` | `1` | Enable the backup download endpoint |
+| `BACKUP_SCHEDULE_ENABLED` | `0` | Initial state of scheduled backups (panel UI can override) |
+| `BACKUP_INTERVAL_HOURS` | `24` | Scheduled backup interval in hours |
+| `BACKUP_RETENTION` | `10` | Keep the most recent N backups (`0` = unlimited) |
 
 ### Compose (`.env`)
 
@@ -270,7 +300,8 @@ See [.env.example](.env.example) for the complete list. Key values:
 
 ## Known limitations
 
-- Restoring a backup is not implemented; backups can be created, listed, downloaded, and deleted.
+- Restoring replaces the live world after stopping the server; a safety snapshot of the previous world is kept in the backups folder.
+- Player management actions require RCON to be reachable. The ban list is read from the server's `banned-players.json`; temporary bans are panel-managed (stored in the backups folder) and expire automatically via a minute timer.
 - The `API_TOKEN` is embedded in the production frontend bundle (build-time argument). Rotating the token requires rebuilding the frontend image.
 - Editing properties while the server is running may be overwritten when Minecraft rewrites `server.properties` on shutdown.
 

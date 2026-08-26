@@ -24,6 +24,11 @@
             class="flex-1 sm:flex-none text-center px-2.5 sm:px-3 py-2.5 sm:py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-md transition-all"
             :class="currentView === 'settings' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'"
           >Settings</button>
+          <button
+            @click="currentView = 'players'"
+            class="flex-1 sm:flex-none text-center px-2.5 sm:px-3 py-2.5 sm:py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded-md transition-all"
+            :class="currentView === 'players' ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'"
+          >Players</button>
         </div>
       </div>
       
@@ -122,6 +127,7 @@
           :software="serverInfo.software || ''"
           :map="serverInfo.map || ''"
           :plugins="serverInfo.plugins || []"
+          @players-changed="refreshPlayers"
         />
       </div>
       <div class="lg:col-span-1">
@@ -194,6 +200,12 @@
     />
     <!-- ===== END SETTINGS VIEW ===== -->
 
+    <!-- ===== PLAYERS VIEW ===== -->
+    <PlayerManager
+      v-if="currentView === 'players'"
+    />
+    <!-- ===== END PLAYERS VIEW ===== -->
+
   </div>
 </template>
 
@@ -203,6 +215,7 @@ import { api, createSocketConnection } from './lib/api.js';
 import PlayerList from './components/PlayerList.vue';
 import FastCommands from './components/FastCommands.vue';
 import SettingsPanel from './components/SettingsPanel.vue';
+import PlayerManager from './components/PlayerManager.vue';
 
 // View switching
 const currentView = ref('dashboard');
@@ -300,6 +313,28 @@ const fetchQuery = async () => {
   } catch (err) {
     // Silenciamos errores de query — puede fallar mientras el servidor arranca
     console.debug('Query failed (server may be starting):', err.message);
+  }
+};
+
+// Refrescar jugadores después de acciones de gestión (kick/ban/op)
+const refreshPlayers = async () => {
+  try {
+    const [statusRes, queryRes] = await Promise.allSettled([api.getStatus(), api.getQuery()]);
+    if (statusRes.status === 'fulfilled') {
+      serverInfo.value.running = statusRes.value.running;
+      serverInfo.value.status = statusRes.value.status;
+      serverInfo.value.startedAt = statusRes.value.startedAt || null;
+      if (!serverInfo.value.players || serverInfo.value.players.length === 0) {
+        serverInfo.value.players = statusRes.value.players || [];
+        serverInfo.value.onlinePlayers = statusRes.value.onlinePlayers || 0;
+        serverInfo.value.maxPlayers = statusRes.value.maxPlayers || 10;
+      }
+    }
+    if (queryRes.status === 'fulfilled' && queryRes.value?.running) {
+      serverInfo.value = { ...serverInfo.value, ...queryRes.value };
+    }
+  } catch (err) {
+    console.debug('[refreshPlayers] error:', err.message);
   }
 };
 

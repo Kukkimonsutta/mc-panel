@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { status as mcStatus, queryFull } from 'minecraft-server-util';
 import config from './config.js';
-import { getServerStatus, startServer, stopServer, sendCommand, getContainer, getContainerStats, readServerProperties, writeServerProperties, listBackups, createBackup, deleteBackup } from './dockerService.js';
+import { getServerStatus, startServer, stopServer, sendCommand, getContainer, getContainerStats, readServerProperties, writeServerProperties, listBackups, createBackup, deleteBackup, startRestoreBackup, getRestoreStatus, getBackupSchedule, setBackupSchedule, runScheduledBackup, playerAction, listWhitelist, whitelistAction, listBans, tempBanPlayer, unbanPlayer, processExpiredTempBans, readServerIcon, writeServerIcon } from './dockerService.js';
 
 const app = express();
 const PORT = config.PORT;
@@ -40,12 +40,12 @@ function authMiddleware(req, res, next) {
 
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+    return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
   }
 
   const token = authHeader.slice(7); // Remove 'Bearer ' prefix
   if (token !== config.API_TOKEN) {
-    return res.status(401).json({ error: 'Invalid token' });
+    return res.status(401).json({ success: false, error: 'Invalid token' });
   }
 
   next();
@@ -202,14 +202,14 @@ app.get('/api/server/stats', async (req, res) => {
 // --- Editor de server.properties ---
 app.get('/api/server/properties', async (req, res) => {
   const props = await readServerProperties();
-  if (!props) return res.status(500).json({ error: 'No se pudo leer server.properties' });
+  if (!props) return res.status(500).json({ success: false, error: 'No se pudo leer server.properties' });
   res.json(props);
 });
 
 app.post('/api/server/properties', async (req, res) => {
   const updates = req.body;
   if (!updates || typeof updates !== 'object' || Object.keys(updates).length === 0) {
-    return res.status(400).json({ error: 'Envía un objeto con las propiedades a actualizar' });
+    return res.status(400).json({ success: false, error: 'Envía un objeto con las propiedades a actualizar' });
   }
   const result = await writeServerProperties(updates);
   res.json(result);
@@ -231,6 +231,73 @@ app.delete('/api/server/backups/:name', async (req, res) => {
   res.json(result);
 });
 
+// --- Programación de backups ---
+app.get('/api/server/backups/schedule', async (req, res) => {
+  const schedule = await getBackupSchedule();
+  res.json({ success: true, schedule });
+});
+
+app.post('/api/server/backups/schedule', async (req, res) => {
+  const { enabled, intervalHours, retention } = req.body || {};
+  const result = await setBackupSchedule({ enabled, intervalHours, retention });
+  res.json(result);
+});
+
+// --- Restore de backups ---
+app.post('/api/server/backups/:name/restore', (req, res) => {
+  const result = startRestoreBackup(req.params.name);
+  res.json(result);
+});
+
+app.get('/api/server/restore/status', (req, res) => {
+  res.json(getRestoreStatus());
+});
+
+// --- Gestión de jugadores (via RCON) ---
+app.post('/api/server/players/action', async (req, res) => {
+  const { action, player, reason } = req.body || {};
+  if (action === 'unban') {
+    res.json(await unbanPlayer(player));
+    return;
+  }
+  const result = await playerAction(action, player, reason);
+  res.json(result);
+});
+
+// Baneo temporal (horas) con expiración automática
+app.post('/api/server/players/tempban', async (req, res) => {
+  const { player, reason, hours } = req.body || {};
+  const result = await tempBanPlayer(player, reason, hours);
+  res.json(result);
+});
+
+app.get('/api/server/players/whitelist', async (req, res) => {
+  const result = await listWhitelist();
+  res.json(result);
+});
+
+app.post('/api/server/players/whitelist', async (req, res) => {
+  const { action, player } = req.body || {};
+  const result = await whitelistAction(action, player);
+  res.json(result);
+});
+
+app.get('/api/server/players/bans', async (req, res) => {
+  const result = await listBans();
+  res.json(result);
+});
+
+// --- Icono del servidor (server-icon.png, 64x64) ---
+app.get('/api/server/icon', async (req, res) => {
+  res.json(await readServerIcon());
+});
+
+app.post('/api/server/icon', async (req, res) => {
+  const { data } = req.body || {};
+  const result = await writeServerIcon(data);
+  res.json(result);
+});
+
 // --- Backup download endpoint ---
 app.get('/api/server/backups/:name/download', async (req, res) => {
   try {
@@ -238,21 +305,21 @@ app.get('/api/server/backups/:name/download', async (req, res) => {
     
     // Validate filename (same checks as deleteBackup)
     if (path.basename(name) !== name || !name.endsWith('.tar.gz') || name.includes('..') || name.includes('/') || name.includes('\\')) {
-      return res.status(400).json({ error: 'Invalid backup name' });
+      return res.status(400).json({ success: false, error: 'Invalid backup name' });
     }
 
     const fp = path.join(config.BACKUP_DIR, name);
     
     // Check file exists
     if (!fs.existsSync(fp)) {
-      return res.status(404).json({ error: 'Backup not found' });
+      return res.status(404).json({ success: false, error: 'Backup not found' });
     }
 
     // Security: resolve real path and verify it's within BACKUP_DIR
     const realPath = await fs.promises.realpath(fp);
     const realBackupDir = await fs.promises.realpath(config.BACKUP_DIR);
     if (!realPath.startsWith(realBackupDir + path.sep) && realPath !== realBackupDir) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
     // Send file
@@ -262,7 +329,7 @@ app.get('/api/server/backups/:name/download', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -274,7 +341,7 @@ app.get('/api/health', async (req, res) => {
     await container.inspect();
     res.json({ ok: true, message: 'Server healthy, Docker reachable' });
   } catch (err) {
-    res.status(503).json({ ok: false, error: 'Docker unreachable' });
+    res.status(503).json({ ok: false, success: false, error: 'Docker unreachable' });
   }
 });
 
@@ -346,6 +413,14 @@ io.on('connection', async (socket) => {
     }
   });
 });
+
+// Programador de backups: verifica cada minuto si toca ejecutar
+// También procesa la expiración de baneos temporales
+const scheduleTimer = setInterval(() => {
+  runScheduledBackup().catch((err) => console.error('❌ Scheduled backup error:', err.message));
+  processExpiredTempBans().catch((err) => console.error('❌ Temp ban expiry error:', err.message));
+}, 60 * 1000);
+scheduleTimer.unref();
 
 // Iniciamos el servidor usando httpServer en lugar de app.listen
 httpServer.listen(PORT, () => {

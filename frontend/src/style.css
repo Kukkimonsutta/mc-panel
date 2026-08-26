@@ -13,6 +13,13 @@ button {
   touch-action: manipulation;
 }
 
+/* Checkerboard background for transparent pixel art */
+.bg-checkerboard {
+  background-image:
+    conic-gradient(#334155 0 25%, #1e293b 0 50%, #334155 0 75%, #1e293b 0);
+  background-size: 16px 16px;
+}
+
 body {
   background-color: #0b0f19; /* Fondo súper oscuro moderno */
   color: #f3f4f6;

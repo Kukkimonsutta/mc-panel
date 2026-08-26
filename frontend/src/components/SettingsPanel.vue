@@ -15,6 +15,7 @@
       <div v-if="motdOpen && !loading" class="p-4 sm:p-5">
         <MotdEditor
           :model-value="motdLocal"
+          :icon-url="iconData"
           @update:model-value="motdLocal = $event; motdDirty = true; motdError = ''"
         />
         <div v-if="motdError" class="mt-3 text-[10px] font-mono px-3 py-2 rounded-lg border text-rose-400 border-rose-900/40 bg-rose-950/20">{{ motdError }}</div>
@@ -94,6 +95,18 @@
       </div>
     </div>
 
+    <!-- ═══ 4. SERVER ICON ═══ -->
+    <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 rounded-xl border border-indigo-950/50 overflow-hidden">
+      <button @click="iconOpen = !iconOpen" class="w-full bg-gray-900/40 px-4 sm:px-5 py-3 border-b border-indigo-950/40 flex items-center gap-2 hover:bg-gray-900/60 transition-colors" :class="{ 'border-b-0': !iconOpen }">
+        <svg class="w-4 h-4 text-cyan-400 transition-transform shrink-0" :class="{ 'rotate-90': iconOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <svg class="w-4 h-4 text-cyan-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span class="text-xs font-mono uppercase tracking-widest text-cyan-400">Server Icon</span>
+      </button>
+      <div v-if="iconOpen" class="p-4 sm:p-5">
+        <IconEditor @saved="onIconSaved" />
+      </div>
+    </div>
+
     <!-- ═══ CONFIRMATION POPUP ═══ -->
     <Transition name="popup">
       <div v-if="confirm.show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="confirm.show = false">
@@ -133,16 +146,21 @@ import { ref, computed, onMounted } from 'vue';
 import { api } from '../lib/api.js';
 import MotdEditor from './MotdEditor.vue';
 import BackupManager from './BackupManager.vue';
+import IconEditor from './IconEditor.vue';
 
 // Collapsible sections
 const motdOpen = ref(true);
 const propsOpen = ref(false);
 const backupsOpen = ref(false);
+const iconOpen = ref(false);
 
 // MOTD
 const motdLocal = ref('');
 const motdDirty = ref(false);
 const motdError = ref('');
+
+// Server icon (data URL used in the MOTD preview)
+const iconData = ref('');
 
 // Properties
 const propsData = ref({});
@@ -210,6 +228,13 @@ async function fetchProps() {
   } finally {
     loading.value = false;
   }
+  // Cargar el icono actual para la vista previa del MOTD (no bloqueante)
+  try {
+    const iconRes = await api.getIcon();
+    if (iconRes.success) iconData.value = iconRes.icon || '';
+  } catch (_) {
+    // Sin icono todavía
+  }
 }
 
 function startEditing() {
@@ -239,6 +264,19 @@ async function doSaveMotd() {
   } finally {
     saving.value = false;
   }
+}
+
+// --- Server icon saved ---
+function onIconSaved() {
+  // Actualizar la vista previa del MOTD con el nuevo icono
+  api.getIcon().then((res) => {
+    if (res.success) iconData.value = res.icon || '';
+  }).catch(() => {});
+  restartPrompt.value = {
+    show: true,
+    title: 'Icon Saved',
+    message: 'The icon was saved to server-icon.png. It will appear in the server list after the server restarts.'
+  };
 }
 
 // --- Save Properties ---
