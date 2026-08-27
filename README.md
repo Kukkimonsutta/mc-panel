@@ -10,7 +10,7 @@ Monitor live server status, send console commands, manage players, edit `server.
 
 - **Live status control** — a single ONLINE/OFFLINE control in the header that starts and stops the Minecraft container with graceful shutdown (`save-all` via RCON)
 - **Server data** — CPU and RAM usage, real Minecraft version, world name, and online time
-- **Live console** — streaming Docker logs over Socket.IO with filtering, command history, and auto-reconnect when the server restarts
+- **Live console** — streaming Docker logs over Socket.IO with an All/Chat view toggle (Chat mode sends `/say` directly), text filtering, loadable history, command history, and auto-reconnect when the server restarts
 - **Player management** — online player list with kick, ban, and op actions, plus a whitelist manager and ban list (unban, ban by name, temporary bans with automatic unban) via RCON
 - **MOTD editor** — colorized `§`-code editor with live preview and cursor-aware code insertion
 - **Server icon editor** — 64×64 pixel editor with palette, fill, procedural generators, and image upload; writes `server-icon.png`

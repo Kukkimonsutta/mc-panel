@@ -199,6 +199,38 @@ app.get('/api/server/stats', async (req, res) => {
   res.json(stats);
 });
 
+// --- Historial de logs del contenedor (últimas N líneas) ---
+app.get('/api/server/logs', async (req, res) => {
+  try {
+    let lines = parseInt(req.query.lines, 10);
+    if (!Number.isFinite(lines)) lines = 1000;
+    lines = Math.max(100, Math.min(lines, 5000));
+
+    const container = getContainer();
+    const result = await container.logs({ stdout: true, stderr: true, tail: lines, follow: false });
+    let data = '';
+    if (result && typeof result.on === 'function') {
+      // Stream (dockerode < 4 o con follow)
+      result.on('data', (chunk) => { data += chunk.toString('utf8'); });
+      await new Promise((resolve, reject) => {
+        result.on('end', resolve);
+        result.on('error', reject);
+      });
+    } else {
+      // dockerode 4 resuelve con el buffer completo cuando follow: false
+      data = Buffer.isBuffer(result) ? result.toString('utf8') : String(result || '');
+    }
+
+    const cleaned = data
+      .split('\n')
+      .map((l) => l.replace(/[\u0000-\u001f]/g, ''))
+      .filter((l) => l.trim().length > 0);
+    res.json({ success: true, lines: cleaned });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- Editor de server.properties ---
 app.get('/api/server/properties', async (req, res) => {
   const props = await readServerProperties();
@@ -362,7 +394,7 @@ io.on('connection', async (socket) => {
           follow: true,
           stdout: true,
           stderr: true,
-          tail: 100 // Nos manda las últimas 100 líneas al conectar
+          tail: 500 // Nos manda las últimas 500 líneas al conectar
         });
 
         // Escuchamos el flujo de datos y lo enviamos al cliente web

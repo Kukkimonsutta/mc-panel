@@ -146,7 +146,19 @@
           <span class="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
           <span class="text-xs font-mono uppercase tracking-widest text-indigo-400">stdout::terminal_bridge</span>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-0.5 bg-gray-950 border border-gray-800 rounded p-0.5">
+            <button
+              @click="logView = 'all'"
+              class="px-2.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded transition-colors"
+              :class="logView === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+            >All</button>
+            <button
+              @click="logView = 'chat'"
+              class="px-2.5 py-0.5 text-[10px] font-mono font-bold uppercase tracking-wider rounded transition-colors"
+              :class="logView === 'chat' ? 'bg-indigo-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+            >Chat</button>
+          </div>
           <input
             v-model="logFilter"
             type="text"
@@ -154,6 +166,13 @@
             class="w-28 sm:w-36 bg-gray-950 border border-gray-800 rounded px-2.5 py-1 text-[10px] font-mono text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-700/50 transition-colors"
             spellcheck="false"
           />
+          <button 
+            @click="loadMoreLogs" 
+            :disabled="loadingHistory"
+            class="text-[10px] font-mono uppercase tracking-wider text-indigo-500 hover:text-indigo-300 transition-colors bg-indigo-950/30 hover:bg-indigo-900/30 px-2 py-1 rounded border border-indigo-900/50 disabled:opacity-50"
+          >
+            {{ loadingHistory ? 'Loading…' : 'History' }}
+          </button>
           <button 
             @click="clearConsole" 
             class="text-[10px] font-mono uppercase tracking-wider text-indigo-500 hover:text-indigo-300 transition-colors bg-indigo-950/30 hover:bg-indigo-900/30 px-2 py-1 rounded border border-indigo-900/50"
@@ -164,13 +183,15 @@
       </div>
       
       <!-- Terminal -->
-      <div ref="terminal" class="flex-1 p-4 font-mono text-xs overflow-y-auto space-y-1.5 scrollbar-custom">
-        <template v-for="(log, idx) in filteredLogs" :key="idx">
+      <div ref="terminal" class="h-[45vh] min-h-[250px] sm:h-[480px] p-4 font-mono text-xs overflow-y-auto space-y-1.5 scrollbar-custom">
+        <template v-for="(log, idx) in displayedLogs" :key="idx">
           <div class="text-slate-300 leading-relaxed whitespace-pre-wrap">
             <span class="text-indigo-500/50 select-none mr-2 font-bold">»</span>{{ log }}
           </div>
         </template>
-        <div v-if="filteredLogs.length === 0 && logs.length > 0" class="text-slate-600 italic font-mono p-2">No matching logs...</div>
+        <div v-if="displayedLogs.length === 0 && logs.length > 0" class="text-slate-600 italic font-mono p-2">
+          {{ logView === 'chat' ? 'No chat messages in the captured logs...' : 'No matching logs...' }}
+        </div>
         <div v-if="logs.length === 0" class="text-slate-600 italic font-mono p-2">No terminal stdout streams captured...</div>
       </div>
 
@@ -182,7 +203,7 @@
           v-model="commandText"
           @keydown="handleCommandKeydown"
           type="text"
-          :placeholder="serverInfo.running ? 'Type /help for commands...' : 'Server offline...'"
+          :placeholder="serverInfo.running ? (logView === 'chat' ? 'Chat mode — type a message, Enter sends it' : 'Type /help for commands...') : 'Server offline...'"
           :disabled="!serverInfo.running || isSendingCommand"
           class="flex-1 bg-transparent border-none outline-none text-xs font-mono text-gray-200 placeholder-gray-600 disabled:opacity-40"
           spellcheck="false"
@@ -247,12 +268,40 @@ const onlineDuration = computed(() => {
 // Resource stats
 const stats = ref({ cpu: 0, ramUsed: 0, ramTotal: 0, ramPercent: 0 });
 
-// Log filtering
+// Log filtering + view mode (all / chat only)
 const logFilter = ref('');
-const filteredLogs = computed(() => {
-  if (!logFilter.value) return logs.value;
+const logView = ref('all'); // 'all' | 'chat'
+
+// Líneas que cuentan como "chat": mensajes de jugadores, say/whisper del panel,
+// acciones /me, uniones, salidas y avances
+const CHAT_PATTERNS = [
+  /:\s*<[^>]+>\s*/,                       // <Player> chat
+  /:\s*\[(server|rcon|not secure)\]\s*/i, // [Server] / [Rcon] say & whisper
+  /:\s*\*\s*\S+\s+/,                      // * Player /me action
+  /^\[panel\]\s+/i,                       // Echo de mensajes enviados desde el panel
+  /\bjoined the game\b/i,
+  /\bleft the game\b/i,
+  /\bhas made the advancement\b/i,
+  /\bhas reached the goal\b/i,
+  /\bhas completed the challenge\b/i,
+];
+
+function isChatLine(line) {
+  const clean = String(line).replace(/\x1b\[[0-9;]*m/g, '');
+  return CHAT_PATTERNS.some((re) => re.test(clean));
+}
+
+function isLineDisplayed(line) {
+  if (logView.value === 'chat' && !isChatLine(line)) return false;
+  if (!logFilter.value) return true;
+  return line.toLowerCase().includes(logFilter.value.toLowerCase());
+}
+
+const displayedLogs = computed(() => {
+  const base = logView.value === 'chat' ? logs.value.filter(isChatLine) : logs.value;
+  if (!logFilter.value) return base;
   const q = logFilter.value.toLowerCase();
-  return logs.value.filter(l => l.toLowerCase().includes(q));
+  return base.filter((l) => l.toLowerCase().includes(q));
 });
 
 // Stats polling
@@ -270,14 +319,20 @@ const commandText = ref('');
 const commandHistory = ref([]);
 const historyIndex = ref(-1);
 
+// Eco pendiente de un mensaje de chat enviado desde el panel (evita duplicados)
+const pendingChatEcho = ref(null);
+// Carga de historial de logs
+const loadingHistory = ref(false);
+
 let socket = null;
 let playerPollInterval = null;
 
-// Helper: push log line and cap to last 30 entries
+// Helper: push log line and cap to last 1000 entries (keeps chat lines available
+// when switching to the Chat view)
 const pushLog = (line) => {
   logs.value.push(line);
-  if (logs.value.length > 30) {
-    logs.value = logs.value.slice(-30);
+  if (logs.value.length > 1000) {
+    logs.value = logs.value.slice(-1000);
   }
 };
 
@@ -370,6 +425,27 @@ const clearConsole = () => {
   logs.value = [];
 };
 
+// Cargar más historial: reemplaza el buffer con las últimas N líneas del contenedor
+const loadMoreLogs = async () => {
+  if (loadingHistory.value) return;
+  loadingHistory.value = true;
+  try {
+    const target = Math.max(logs.value.length + 1000, 1000);
+    const res = await api.getLogs(target);
+    if (res.success && Array.isArray(res.lines) && res.lines.length > 0) {
+      logs.value = res.lines;
+      await nextTick();
+      if (terminal.value) {
+        terminal.value.scrollTop = terminal.value.scrollHeight;
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load log history:', err.message);
+  } finally {
+    loadingHistory.value = false;
+  }
+};
+
 const scrollToBottom = async () => {
   await nextTick();
   if (terminal.value) {
@@ -380,16 +456,25 @@ const scrollToBottom = async () => {
 // --- Console Command Input ---
 
 const sendConsoleCommand = async () => {
-  const cmd = commandText.value.trim();
-  if (!cmd || isSendingCommand.value || !serverInfo.value.running) return;
+  const raw = commandText.value.trim();
+  if (!raw || isSendingCommand.value || !serverInfo.value.running) return;
+
+  // En modo Chat, el texto plano se envía como /say; los comandos explícitos empiezan con /
+  const isChatSay = logView.value === 'chat' && !raw.startsWith('/');
+  const cmd = isChatSay ? `say ${raw}` : raw;
 
   // Add to history
-  commandHistory.value.unshift(cmd);
+  commandHistory.value.unshift(raw);
   if (commandHistory.value.length > 50) commandHistory.value.pop();
   historyIndex.value = -1;
 
   isSendingCommand.value = true;
-  pushLog(`❯ ${cmd}`);
+  if (isChatSay) {
+    pendingChatEcho.value = { text: raw, ts: Date.now() };
+    pushLog(`[Panel] ${raw}`);
+  } else {
+    pushLog(`❯ ${cmd}`);
+  }
   scrollToBottom();
 
   try {
@@ -535,8 +620,18 @@ onMounted(() => {
   });
 
   socket.on('log-line', (line) => {
+    // Evitar duplicar el eco de un mensaje de chat enviado desde el panel
+    if (
+      pendingChatEcho.value &&
+      Date.now() - pendingChatEcho.value.ts < 5000 &&
+      line.toLowerCase().includes(pendingChatEcho.value.text.toLowerCase())
+    ) {
+      pendingChatEcho.value = null;
+      return;
+    }
     pushLog(line);
-    scrollToBottom();
+    // Solo auto-scroll si la línea es visible en el modo/filtro actual
+    if (isLineDisplayed(line)) scrollToBottom();
     
     // Auto-detección de estado desde logs
     if (line.includes('Starting Minecraft server') || line.includes('Done')) {

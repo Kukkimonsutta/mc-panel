@@ -111,6 +111,14 @@ export const api = {
   },
 
   /**
+   * Get the latest N container log lines (for history loading)
+   */
+  async getLogs(lines = 1000) {
+    const res = await apiClient.get('/api/server/logs', { params: { lines } });
+    return res.data;
+  },
+
+  /**
    * Start server
    */
   async startServer() {
