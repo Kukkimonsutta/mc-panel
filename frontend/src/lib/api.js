@@ -313,6 +313,22 @@ export const api = {
   },
 
   /**
+   * Get the power schedule (auto start/stop events)
+   */
+  async getPowerSchedule() {
+    const res = await apiClient.get('/api/server/power-schedule');
+    return res.data;
+  },
+
+  /**
+   * Update the power schedule
+   */
+  async setPowerSchedule(schedule) {
+    const res = await apiClient.post('/api/server/power-schedule', schedule);
+    return res.data;
+  },
+
+  /**
    * Health check
    */
   async health() {

@@ -1102,3 +1102,91 @@ export async function writeServerIcon(dataUrl) {
     return { success: false, error: err.message };
   }
 }
+
+// ─── POWER SCHEDULE (auto encendido/apagado) ───────────────
+const POWER_SCHEDULE_FILE = () => path.join(config.BACKUP_DIR, '.power-schedule.json');
+
+/** Lee la programación de encendido/apagado (archivo JSON editado desde el panel) */
+export async function getPowerSchedule() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  try {
+    const raw = await fs.promises.readFile(POWER_SCHEDULE_FILE(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: !!parsed.enabled,
+      events: Array.isArray(parsed.events) ? parsed.events : [],
+      timezone: tz,
+    };
+  } catch {
+    return { enabled: false, events: [], timezone: tz };
+  }
+}
+
+function validatePowerEvents(events) {
+  if (!Array.isArray(events)) return { error: 'events must be an array' };
+  if (events.length > 24) return { error: 'Maximum 24 events allowed' };
+  for (const e of events) {
+    if (!e || typeof e !== 'object') return { error: 'Invalid event' };
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.time || '')) return { error: `Invalid time: ${e.time}` };
+    if (e.action !== 'start' && e.action !== 'stop') return { error: `Invalid action: ${e.action}` };
+    const days = Array.isArray(e.days) ? e.days : [];
+    if (!days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)) {
+      return { error: 'days must be integers 0-6 (0 = Sunday)' };
+    }
+  }
+  return { ok: true };
+}
+
+/** Actualiza y persiste la programación */
+export async function setPowerSchedule({ enabled, events } = {}) {
+  try {
+    const current = await getPowerSchedule();
+    const next = { enabled: current.enabled, events: current.events };
+    if (typeof enabled === 'boolean') next.enabled = enabled;
+    if (events !== undefined) {
+      const check = validatePowerEvents(events);
+      if (!check.ok) return { success: false, error: check.error };
+      next.events = events.map((e) => ({
+        time: e.time,
+        action: e.action,
+        days: Array.isArray(e.days) ? e.days.slice().sort((a, b) => a - b) : [],
+      }));
+    }
+    await fs.promises.mkdir(config.BACKUP_DIR, { recursive: true });
+    await fs.promises.writeFile(POWER_SCHEDULE_FILE(), JSON.stringify(next, null, 2), 'utf8');
+    return { success: true, schedule: await getPowerSchedule() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Ejecuta eventos de encendido/apagado que toquen este minuto (llamado por el timer) */
+export async function runPowerSchedule() {
+  try {
+    const schedule = await getPowerSchedule();
+    if (!schedule.enabled || schedule.events.length === 0) return null;
+
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const day = now.getDay(); // 0 = Sunday
+
+    const results = [];
+    for (const e of schedule.events) {
+      if (e.time !== hhmm) continue;
+      if (e.days && e.days.length > 0 && !e.days.includes(day)) continue;
+
+      console.log(`⏰ Power schedule: ${e.action} a las ${hhmm}`);
+      const result = e.action === 'start' ? await startServer() : await stopServer();
+      results.push({
+        time: e.time,
+        action: e.action,
+        success: result.success,
+        error: result.success ? null : result.error,
+      });
+    }
+    return results.length > 0 ? { executed: results } : null;
+  } catch (err) {
+    console.error('❌ Error en power schedule:', err.message);
+    return { success: false, error: err.message };
+  }
+}

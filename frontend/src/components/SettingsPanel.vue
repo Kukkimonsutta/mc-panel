@@ -83,6 +83,18 @@
       </div>
     </div>
 
+    <!-- ═══ POWER SCHEDULE ═══ -->
+    <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 rounded-xl border border-indigo-950/50 overflow-hidden">
+      <button @click="powerOpen = !powerOpen" class="w-full bg-gray-900/40 px-4 sm:px-5 py-3 border-b border-indigo-950/40 flex items-center gap-2 hover:bg-gray-900/60 transition-colors" :class="{ 'border-b-0': !powerOpen }">
+        <svg class="w-4 h-4 text-violet-400 transition-transform shrink-0" :class="{ 'rotate-90': powerOpen }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        <svg class="w-4 h-4 text-violet-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <span class="text-xs font-mono uppercase tracking-widest text-violet-400">Power Schedule</span>
+      </button>
+      <div v-if="powerOpen" class="p-4 sm:p-5">
+        <PowerSchedule />
+      </div>
+    </div>
+
     <!-- ═══ 3. BACKUPS ═══ -->
     <div class="bg-gradient-to-b from-gray-900/60 to-gray-950/40 rounded-xl border border-indigo-950/50 overflow-hidden">
       <button @click="backupsOpen = !backupsOpen" class="w-full bg-gray-900/40 px-4 sm:px-5 py-3 border-b border-indigo-950/40 flex items-center gap-2 hover:bg-gray-900/60 transition-colors" :class="{ 'border-b-0': !backupsOpen }">
@@ -147,12 +159,14 @@ import { api } from '../lib/api.js';
 import MotdEditor from './MotdEditor.vue';
 import BackupManager from './BackupManager.vue';
 import IconEditor from './IconEditor.vue';
+import PowerSchedule from './PowerSchedule.vue';
 
 // Collapsible sections
 const motdOpen = ref(true);
 const propsOpen = ref(false);
 const backupsOpen = ref(false);
 const iconOpen = ref(false);
+const powerOpen = ref(false);
 
 // MOTD
 const motdLocal = ref('');

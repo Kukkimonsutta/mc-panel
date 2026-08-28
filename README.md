@@ -14,6 +14,7 @@ Monitor live server status, send console commands, manage players, edit `server.
 - **Player management** — online player list with kick, ban, and op actions, plus a whitelist manager and ban list (unban, ban by name, temporary bans with automatic unban) via RCON
 - **MOTD editor** — colorized `§`-code editor with live preview and cursor-aware code insertion
 - **Server icon editor** — 64×64 pixel editor with palette, fill, procedural generators, and image upload; writes `server-icon.png`
+- **Power scheduling** — automatic server start/stop events per time of day and day of week
 - **Settings** — edit `server.properties` with validation, automatic Docker Compose synchronization, and restart with status polling
 - **Backups** — safe world backups (save-off/save-on coordination), list, download, delete, restore, scheduled backups, and automatic retention
 - **Security** — optional bearer-token authentication for the API and WebSocket connections
@@ -189,6 +190,8 @@ io(url, { auth: { token: API_TOKEN } })
 | `/api/server/players/tempban` | POST | Temporary ban; auto-pardon after `hours` |
 | `/api/server/icon` | GET | Get the current server icon (data URL) |
 | `/api/server/icon` | POST | Save a 64×64 PNG server icon |
+| `/api/server/power-schedule` | GET | Get the auto start/stop schedule |
+| `/api/server/power-schedule` | POST | Update the auto start/stop schedule |
 
 ### Example
 

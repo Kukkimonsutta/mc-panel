@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { status as mcStatus, queryFull } from 'minecraft-server-util';
 import config from './config.js';
-import { getServerStatus, startServer, stopServer, sendCommand, getContainer, getContainerStats, readServerProperties, writeServerProperties, listBackups, createBackup, deleteBackup, startRestoreBackup, getRestoreStatus, getBackupSchedule, setBackupSchedule, runScheduledBackup, playerAction, listWhitelist, whitelistAction, listBans, tempBanPlayer, unbanPlayer, processExpiredTempBans, readServerIcon, writeServerIcon } from './dockerService.js';
+import { getServerStatus, startServer, stopServer, sendCommand, getContainer, getContainerStats, readServerProperties, writeServerProperties, listBackups, createBackup, deleteBackup, startRestoreBackup, getRestoreStatus, getBackupSchedule, setBackupSchedule, runScheduledBackup, playerAction, listWhitelist, whitelistAction, listBans, tempBanPlayer, unbanPlayer, processExpiredTempBans, readServerIcon, writeServerIcon, getPowerSchedule, setPowerSchedule, runPowerSchedule } from './dockerService.js';
 
 const app = express();
 const PORT = config.PORT;
@@ -330,6 +330,18 @@ app.post('/api/server/icon', async (req, res) => {
   res.json(result);
 });
 
+// --- Programación de encendido/apagado del servidor ---
+app.get('/api/server/power-schedule', async (req, res) => {
+  const schedule = await getPowerSchedule();
+  res.json({ success: true, schedule });
+});
+
+app.post('/api/server/power-schedule', async (req, res) => {
+  const { enabled, events } = req.body || {};
+  const result = await setPowerSchedule({ enabled, events });
+  res.json(result);
+});
+
 // --- Backup download endpoint ---
 app.get('/api/server/backups/:name/download', async (req, res) => {
   try {
@@ -447,10 +459,11 @@ io.on('connection', async (socket) => {
 });
 
 // Programador de backups: verifica cada minuto si toca ejecutar
-// También procesa la expiración de baneos temporales
+// También procesa la expiración de baneos temporales y el auto encendido/apagado
 const scheduleTimer = setInterval(() => {
   runScheduledBackup().catch((err) => console.error('❌ Scheduled backup error:', err.message));
   processExpiredTempBans().catch((err) => console.error('❌ Temp ban expiry error:', err.message));
+  runPowerSchedule().catch((err) => console.error('❌ Power schedule error:', err.message));
 }, 60 * 1000);
 scheduleTimer.unref();
 
