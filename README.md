@@ -47,6 +47,13 @@ flowchart LR
   - a data directory containing `server.properties` (the panel reads and writes it)
   - an external Docker network shared with the panel stack
 
+> 🧱 **Recommended server image** — this panel is designed for and tested against
+> [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server).
+> That image supports all the features used here out of the box (RCON via
+> `ENABLE_RCON`/`RCON_PASSWORD`, status/query ports, and a data directory layout
+> with `server.properties`), and the property↔environment mapping in
+> `backend/src/dockerService.js` follows its variable names.
+
 ## Installation
 
 ### Step 1 — Enable RCON on the Minecraft server
@@ -57,6 +64,15 @@ In the Minecraft server's `server.properties`:
 enable-rcon=true
 rcon.port=25575
 rcon.password=choose-a-strong-password
+```
+
+With [itzg/docker-minecraft-server](https://github.com/itzg/docker-minecraft-server) you can do the same via environment variables in the Minecraft Compose file:
+
+```yaml
+environment:
+  ENABLE_RCON: "true"
+  RCON_PORT: 25575
+  RCON_PASSWORD: "choose-a-strong-password"
 ```
 
 Restart the Minecraft container afterwards.
