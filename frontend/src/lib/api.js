@@ -297,6 +297,14 @@ export const api = {
   },
 
   /**
+   * Get connected players' session start times
+   */
+  async getPlayerSessions() {
+    const res = await apiClient.get('/api/server/players/sessions');
+    return res.data;
+  },
+
+  /**
    * Get the current server icon (data URL, or null if none)
    */
   async getIcon() {

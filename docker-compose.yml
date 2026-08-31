@@ -3,6 +3,11 @@ services:
     build:
       context: ./backend
     restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       NODE_ENV: production
       PORT: 3005
@@ -23,7 +28,7 @@ services:
       ENABLE_BACKUP_DOWNLOAD: ${ENABLE_BACKUP_DOWNLOAD:-1}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${MINECRAFT_ROOT:-/home/kukkimonsuta/docker/minecraft}:/minecraft
+      - ${MINECRAFT_ROOT:?Set MINECRAFT_ROOT in .env}:/minecraft
     group_add:
       - ${DOCKER_SOCKET_GID:-999}
     networks:
@@ -56,4 +61,4 @@ networks:
     driver: bridge
   minecraft_net:
     external: true
-    name: ${MINECRAFT_NETWORK:-stark_net}
+    name: ${MINECRAFT_NETWORK:?Set MINECRAFT_NETWORK in .env}

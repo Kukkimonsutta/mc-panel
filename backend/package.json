@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dockerode": "^4.0.2",
+    "dockerode": "^5.0.1",
     "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "mc-server-status": "^2.0.2",

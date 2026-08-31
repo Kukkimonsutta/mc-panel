@@ -888,7 +888,7 @@ export async function playerAction(action, player, reason = '') {
   };
   if (!builders[action]) return { success: false, error: `Unknown action: ${action}` };
   if (!PLAYER_NAME_RE.test(player || '')) return { success: false, error: 'Invalid player name' };
-  if (reason && /[\r\n]/.test(reason)) return { success: false, error: 'Invalid reason' };
+  if (reason && (reason.length > 200 || /[\r\n]/.test(reason))) return { success: false, error: 'Invalid reason' };
 
   const result = await rconCommand(builders[action](player, reason || ''));
   if (result.success && /does not exist|not found/i.test(result.output || '')) {
@@ -1001,7 +1001,7 @@ export async function tempBanPlayer(player, reason = '', hours) {
     return { success: false, error: 'hours must be between 0.1 and 8760' };
   }
   if (!PLAYER_NAME_RE.test(player || '')) return { success: false, error: 'Invalid player name' };
-  if (reason && /[\r\n]/.test(reason)) return { success: false, error: 'Invalid reason' };
+  if (reason && (reason.length > 200 || /[\r\n]/.test(reason))) return { success: false, error: 'Invalid reason' };
 
   const until = new Date(Date.now() + h * 3600e3).toISOString();
   const cmd = `ban ${player}${reason ? ` ${reason}` : ''}`;
@@ -1087,8 +1087,8 @@ export async function writeServerIcon(dataUrl) {
       return { success: false, error: 'Expected a base64 PNG data URL' };
     }
     const buf = Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64');
-    if (buf.length > 2 * 1024 * 1024) {
-      return { success: false, error: 'Icon file too large (max 2 MB)' };
+    if (buf.length > 256 * 1024) {
+      return { success: false, error: 'Icon file too large (max 256 KB)' };
     }
     const size = parsePngSize(buf);
     if (!size) return { success: false, error: 'Invalid PNG data' };
@@ -1189,4 +1189,102 @@ export async function runPowerSchedule() {
     console.error('❌ Error en power schedule:', err.message);
     return { success: false, error: err.message };
   }
+}
+
+// ─── PLAYER SESSION TRACKER (tiempo conectado por jugador) ─
+// Mantiene un mapa nombre → fecha de conexión leyendo los logs del contenedor.
+const playerSessions = new Map(); // name -> joinedAt (ms epoch)
+let sessionTrackerStream = null;
+let sessionTrackerTimer = null;
+
+function handleSessionLine(line, nowMs) {
+  if (!line) return;
+  let m = line.match(/:\s+([A-Za-z0-9_]{1,16})\s+joined the game\s*$/);
+  if (m) {
+    playerSessions.set(m[1], nowMs);
+    return;
+  }
+  m = line.match(/:\s+([A-Za-z0-9_]{1,16})\s+left the game\s*$/);
+  if (m) playerSessions.delete(m[1]);
+}
+
+/**
+ * Inicializa el tracker: escanea el histórico reciente y sigue los logs en vivo.
+ * El histórico solo tiene HH:mm:ss, así que estimamos la fecha (hoy, con
+ * detección de cruce de medianoche y guarda contra tiempos futuros).
+ */
+export async function initPlayerSessionTracker() {
+  try {
+    const container = getContainer();
+    const result = await container.logs({ stdout: true, stderr: true, tail: 5000, follow: false });
+    let data = '';
+    if (result && typeof result.on === 'function') {
+      result.on('data', (c) => { data += c.toString('utf8'); });
+      await new Promise((res, rej) => { result.on('end', res); result.on('error', rej); });
+    } else {
+      data = Buffer.isBuffer(result) ? result.toString('utf8') : String(result || '');
+    }
+
+    const lines = data.split('\n').map((l) => l.replace(/[\u0000-\u001f]/g, '').trim()).filter(Boolean);
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    let baseMs = dayStart.getTime();
+    let prevSecs = null;
+    const nowMs = Date.now();
+
+    for (const line of lines) {
+      const tm = line.match(/^[^\[]*\[(\d{2}):(\d{2}):(\d{2})\]/);
+      if (tm) {
+        const secs = +tm[1] * 3600 + +tm[2] * 60 + +tm[3];
+        if (prevSecs !== null && secs < prevSecs) baseMs -= 86400000; // cruce de medianoche
+        prevSecs = secs;
+        let eventMs = baseMs + secs * 1000;
+        if (eventMs > nowMs) eventMs -= 86400000; // no puede ser futuro → fue ayer
+        handleSessionLine(line, eventMs);
+      } else {
+        handleSessionLine(line, nowMs);
+      }
+    }
+    console.log(`👥 Session tracker iniciado: ${playerSessions.size} sesiones conocidas`);
+  } catch (err) {
+    console.warn('⚠️ No se pudo inicializar el session tracker desde el histórico:', err.message);
+  }
+
+  followSessionLogs();
+}
+
+function followSessionLogs() {
+  try {
+    getContainer()
+      .logs({ follow: true, stdout: true, stderr: true, tail: 0 })
+      .then((stream) => {
+        sessionTrackerStream = stream;
+        stream.on('data', (chunk) => {
+          const text = chunk.toString('utf8').replace(/[\u0000-\u001f]/g, '');
+          for (const line of text.split('\n')) {
+            handleSessionLine(line, Date.now());
+          }
+        });
+        stream.on('end', scheduleSessionTrackerReattach);
+        stream.on('error', scheduleSessionTrackerReattach);
+      })
+      .catch(() => scheduleSessionTrackerReattach());
+  } catch {
+    scheduleSessionTrackerReattach();
+  }
+}
+
+function scheduleSessionTrackerReattach() {
+  if (sessionTrackerStream) {
+    sessionTrackerStream.destroy?.().catch?.(() => {});
+    sessionTrackerStream = null;
+  }
+  if (sessionTrackerTimer) clearTimeout(sessionTrackerTimer);
+  sessionTrackerTimer = setTimeout(followSessionLogs, 5000);
+  sessionTrackerTimer.unref?.();
+}
+
+/** Retorna { nombre: joinedAt (ms epoch) } de los jugadores vistos conectados */
+export function getPlayerSessions() {
+  return Object.fromEntries(playerSessions);
 }

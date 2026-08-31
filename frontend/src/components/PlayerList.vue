@@ -55,6 +55,8 @@
           <span class="text-[11px] font-mono font-bold text-gray-300 truncate max-w-[80px] text-center group-hover:text-indigo-300 transition-colors">
             {{ player }}
           </span>
+          <!-- Session duration -->
+          <span class="text-[9px] font-mono text-cyan-400/70 tabular-nums">{{ sessionDuration(player) }}</span>
           <!-- Player Actions -->
           <div class="flex items-center gap-0.5" @click.stop>
             <button @click="askAction('kick', player)" title="Kick player" class="p-1 rounded text-gray-500 hover:text-amber-400 hover:bg-amber-950/30 transition-colors">
@@ -97,10 +99,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { api } from '../lib/api.js';
 
-defineProps({
+const props = defineProps({
   players: {
     type: Array,
     default: () => []
@@ -132,6 +134,10 @@ defineProps({
   plugins: {
     type: Array,
     default: () => []
+  },
+  sessions: {
+    type: Object,
+    default: () => ({})
   }
 });
 
@@ -142,6 +148,29 @@ const reason = ref('');
 const banHours = ref('');
 const acting = ref(false);
 const actionError = ref('');
+
+// Ticker de 1s para los temporizadores de sesión
+const now = ref(Date.now());
+let sessionTick = null;
+onMounted(() => {
+  sessionTick = setInterval(() => { now.value = Date.now(); }, 1000);
+});
+onUnmounted(() => {
+  if (sessionTick) clearInterval(sessionTick);
+});
+
+function sessionDuration(name) {
+  const entry = props.sessions[name];
+  if (!entry || !entry.joinedAt) return '⏱ —';
+  const secs = Math.max(0, Math.floor((now.value - Date.parse(entry.joinedAt)) / 1000));
+  const d = Math.floor(secs / 86400);
+  const h = Math.floor((secs % 86400) / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const prefix = entry.exact === false ? '≥ ' : '';
+  const out = d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+  return `⏱ ${prefix}${out}`;
+}
 
 function askAction(action, player) {
   reason.value = '';

@@ -127,6 +127,7 @@
           :software="serverInfo.software || ''"
           :map="serverInfo.map || ''"
           :plugins="serverInfo.plugins || []"
+          :sessions="playerSessions"
           @players-changed="refreshPlayers"
         />
       </div>
@@ -242,6 +243,9 @@ import PlayerManager from './components/PlayerManager.vue';
 const currentView = ref('dashboard');
 
 const serverInfo = ref({ status: 'offline', running: false, startedAt: null, worldName: '', players: [] });
+
+// Tiempo de conexión por jugador: { nombre: { joinedAt, exact } }
+const playerSessions = ref({});
 const logs = ref([]);
 const terminal = ref(null);
 const commandInput = ref(null);
@@ -390,6 +394,22 @@ const refreshPlayers = async () => {
     }
   } catch (err) {
     console.debug('[refreshPlayers] error:', err.message);
+  }
+};
+
+// Sesiones de jugadores (tiempo conectado)
+function applySessions(list) {
+  playerSessions.value = Object.fromEntries(
+    (list || []).map((s) => [s.name, { joinedAt: s.joinedAt, exact: s.exact !== false }])
+  );
+}
+
+const fetchPlayerSessions = async () => {
+  try {
+    const res = await api.getPlayerSessions();
+    if (res.success && Array.isArray(res.sessions)) applySessions(res.sessions);
+  } catch (err) {
+    console.debug('[sessions] error:', err.message);
   }
 };
 
@@ -553,9 +573,10 @@ const startPlayerPolling = () => {
     if (!serverInfo.value.running) return;
 
     try {
-      const [statusRes, queryRes] = await Promise.allSettled([
+      const [statusRes, queryRes, sessionsRes] = await Promise.allSettled([
         api.getStatus(),
         api.getQuery(),
+        api.getPlayerSessions(),
       ]);
 
       // Status: SOLO actualizar el flag running
@@ -589,6 +610,11 @@ const startPlayerPolling = () => {
           serverInfo.value.maxPlayers = statusRes.value.maxPlayers || 10;
         }
       }
+
+      // Sesiones de jugadores
+      if (sessionsRes.status === 'fulfilled' && sessionsRes.value?.success) {
+        applySessions(sessionsRes.value.sessions);
+      }
     } catch (err) {
       console.error('[poll] error:', err.message || err);
     }
@@ -604,6 +630,7 @@ const stopPlayerPolling = () => {
 
 onMounted(() => {
   fetchStatus().then(() => fetchQuery());
+  fetchPlayerSessions();
   startPlayerPolling();
   fetchStats();
   statsInterval = setInterval(fetchStats, 5000);

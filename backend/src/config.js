@@ -20,12 +20,13 @@ export const config = {
   // RCON configuration
   RCON_HOST: process.env.RCON_HOST || '127.0.0.1',
   RCON_PORT: parseInt(process.env.RCON_PORT || '25575', 10),
-  RCON_PASSWORD: process.env.RCON_PASSWORD || '1234@4321', // Default kept for compatibility; warn in index.js
+  RCON_PASSWORD: process.env.RCON_PASSWORD || '', // Empty = RCON features disabled
 
-  // Host paths (directories on the Docker host machine)
-  HOST_DATA_DIR: process.env.HOST_DATA_DIR || '/home/kukkimonsuta/docker/minecraft/minecraft_data',
-  HOST_COMPOSE_FILE: process.env.HOST_COMPOSE_FILE || '/home/kukkimonsuta/docker/minecraft/docker-compose.yml',
-  BACKUP_DIR: process.env.BACKUP_DIR || '/home/kukkimonsuta/docker/minecraft/backups',
+  // Host paths (directories on the Docker host machine).
+  // Defaults match the bind mounts defined in docker-compose.yml.
+  HOST_DATA_DIR: process.env.HOST_DATA_DIR || '/minecraft/minecraft_data',
+  HOST_COMPOSE_FILE: process.env.HOST_COMPOSE_FILE || '/minecraft/docker-compose.yml',
+  BACKUP_DIR: process.env.BACKUP_DIR || '/minecraft/backups',
 
   // Derived path (read-only after config load)
   get WORLD_PATH() {
@@ -59,8 +60,8 @@ export const config = {
 export function logConfigWarnings() {
   const warnings = [];
 
-  if (config.RCON_PASSWORD === '1234@4321') {
-    warnings.push('⚠️  RCON using default password "1234@4321" — set RCON_PASSWORD env var to change');
+  if (!config.RCON_PASSWORD) {
+    warnings.push('⚠️  RCON_PASSWORD not set — console commands, player actions, and backups will not work. Set RCON_PASSWORD to the Minecraft server\'s RCON password.');
   }
 
   if (config.CORS_ORIGIN === '*') {
@@ -69,6 +70,8 @@ export function logConfigWarnings() {
 
   if (!config.API_TOKEN) {
     warnings.push('⚠️  API_TOKEN not set — API is open to unauthenticated requests. Set API_TOKEN env var to require authentication.');
+  } else if (String(config.API_TOKEN).length < 16) {
+    warnings.push('⚠️  API_TOKEN is shorter than 16 characters — use a strong random token (e.g. `openssl rand -hex 32`)');
   }
 
   if (warnings.length > 0) {

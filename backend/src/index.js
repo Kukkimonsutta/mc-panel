@@ -1,15 +1,21 @@
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import fs from 'fs';
 import path from 'path';
 import { status as mcStatus, queryFull } from 'minecraft-server-util';
 import config from './config.js';
-import { getServerStatus, startServer, stopServer, sendCommand, getContainer, getContainerStats, readServerProperties, writeServerProperties, listBackups, createBackup, deleteBackup, startRestoreBackup, getRestoreStatus, getBackupSchedule, setBackupSchedule, runScheduledBackup, playerAction, listWhitelist, whitelistAction, listBans, tempBanPlayer, unbanPlayer, processExpiredTempBans, readServerIcon, writeServerIcon, getPowerSchedule, setPowerSchedule, runPowerSchedule } from './dockerService.js';
+import { getServerStatus, startServer, stopServer, sendCommand, getContainer, getContainerStats, readServerProperties, writeServerProperties, listBackups, createBackup, deleteBackup, startRestoreBackup, getRestoreStatus, getBackupSchedule, setBackupSchedule, runScheduledBackup, playerAction, listWhitelist, whitelistAction, listBans, tempBanPlayer, unbanPlayer, processExpiredTempBans, readServerIcon, writeServerIcon, getPowerSchedule, setPowerSchedule, runPowerSchedule, initPlayerSessionTracker, getPlayerSessions } from './dockerService.js';
 
 const app = express();
 const PORT = config.PORT;
+
+app.disable('x-powered-by');
+// The backend is only reachable from the Nginx frontend on the shared Docker
+// network, which sets X-Forwarded-For. Trust it so rate limiting sees real IPs.
+app.set('trust proxy', true);
 
 // CORS configuration
 app.use(cors({
@@ -18,8 +24,8 @@ app.use(cors({
   credentials: config.CORS_ORIGIN !== '*'
 }));
 
-// JSON body parser
-app.use(express.json({ limit: '100kb' }));
+// JSON body parser (1 MB: enough for the 64x64 icon data URL, small for everything else)
+app.use(express.json({ limit: '1mb' }));
 
 // Creamos el servidor HTTP compatible con WebSockets
 const httpServer = createServer(app);
@@ -32,22 +38,74 @@ const io = new Server(httpServer, {
 });
 
 // Auth middleware: checks Authorization: Bearer <token> if API_TOKEN is configured
+function safeTokenEqual(a, b) {
+  const bufA = Buffer.from(String(a || ''), 'utf8');
+  const bufB = Buffer.from(String(b || ''), 'utf8');
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Simple in-memory rate limiter for failed authentication attempts (no deps).
+// 20 failures per minute per IP -> blocked for 5 minutes.
+const failedAuth = new Map(); // ip -> { count, windowStart, blockedUntil }
+const AUTH_FAIL_LIMIT = 20;
+const AUTH_WINDOW_MS = 60 * 1000;
+const AUTH_BLOCK_MS = 5 * 60 * 1000;
+
+function isAuthBlocked(ip) {
+  const entry = failedAuth.get(ip);
+  if (!entry) return false;
+  const now = Date.now();
+  if (entry.blockedUntil && now < entry.blockedUntil) return true;
+  if (now - entry.windowStart > AUTH_WINDOW_MS) {
+    failedAuth.delete(ip);
+    return false;
+  }
+  return false;
+}
+
+function recordAuthFailure(ip) {
+  const now = Date.now();
+  const entry = failedAuth.get(ip);
+  if (!entry || now - entry.windowStart > AUTH_WINDOW_MS) {
+    failedAuth.set(ip, { count: 1, windowStart: now, blockedUntil: 0 });
+    return;
+  }
+  entry.count += 1;
+  if (entry.count >= AUTH_FAIL_LIMIT) {
+    entry.blockedUntil = now + AUTH_BLOCK_MS;
+    console.warn(`🔒 Demasiados intentos de autenticación fallidos desde ${ip} — bloqueado 5 minutos`);
+  }
+}
+
+function clearAuthFailures(ip) {
+  failedAuth.delete(ip);
+}
+
 function authMiddleware(req, res, next) {
   if (!config.API_TOKEN) {
     // No token configured — API is open
     return next();
   }
 
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  if (isAuthBlocked(ip)) {
+    return res.status(429).json({ success: false, error: 'Too many failed attempts. Try again later.' });
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    recordAuthFailure(ip);
     return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
   }
 
   const token = authHeader.slice(7); // Remove 'Bearer ' prefix
-  if (token !== config.API_TOKEN) {
+  if (!safeTokenEqual(token, config.API_TOKEN)) {
+    recordAuthFailure(ip);
     return res.status(401).json({ success: false, error: 'Invalid token' });
   }
 
+  clearAuthFailures(ip);
   next();
 }
 
@@ -62,8 +120,8 @@ io.use((socket, next) => {
     return next();
   }
 
-  const token = socket.handshake.auth.token;
-  if (!token || token !== config.API_TOKEN) {
+  const token = socket.handshake.auth?.token;
+  if (!token || !safeTokenEqual(token, config.API_TOKEN)) {
     return next(new Error('Authentication error'));
   }
 
@@ -342,6 +400,40 @@ app.post('/api/server/power-schedule', async (req, res) => {
   res.json(result);
 });
 
+// --- Tiempo de conexión por jugador ---
+async function getOnlinePlayerNames() {
+  try {
+    const data = await queryFull(config.MC_HOST, config.MC_QUERY_PORT, { timeout: 5000 });
+    return (data.players?.list || []).map((p) => (typeof p === 'string' ? p : p.name));
+  } catch {
+    try {
+      const ping = await mcStatus(config.MC_HOST, config.MC_STATUS_PORT, { enableSRV: false, timeout: 2000 });
+      return (ping.players?.sample || []).map((p) => p.name);
+    } catch {
+      return [];
+    }
+  }
+}
+
+app.get('/api/server/players/sessions', async (req, res) => {
+  try {
+    const known = getPlayerSessions();
+    const online = await getOnlinePlayerNames();
+    const status = await getServerStatus();
+
+    // Fallback: si no conocemos el join (backend reiniciado), usamos el arranque del contenedor como cota inferior
+    const fallback = status.running && status.startedAt ? Date.parse(status.startedAt) : null;
+
+    const sessions = online.map((name) => {
+      if (known[name]) return { name, joinedAt: new Date(known[name]).toISOString(), exact: true };
+      return { name, joinedAt: fallback ? new Date(fallback).toISOString() : null, exact: false };
+    });
+    res.json({ success: true, sessions });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // --- Backup download endpoint ---
 app.get('/api/server/backups/:name/download', async (req, res) => {
   try {
@@ -467,10 +559,46 @@ const scheduleTimer = setInterval(() => {
 }, 60 * 1000);
 scheduleTimer.unref();
 
+// --- 404 para rutas API desconocidas ---
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, error: 'Not found' });
+});
+
+// --- Manejador global de errores (nunca filtrar stack traces) ---
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ success: false, error: 'Request body too large' });
+  }
+  console.error('Unhandled API error:', err?.stack || err);
+  const status = err && err.status && err.status >= 400 && err.status < 500 ? err.status : 500;
+  res.status(status).json({ success: false, error: 'Internal server error' });
+});
+
+// --- Estabilidad: registrar errores de proceso sin tumbar el panel ---
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️  Unhandled promise rejection:', reason?.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️  Uncaught exception:', err?.stack || err);
+});
+
+// --- Apagado ordenado (Docker stop / Ctrl+C) ---
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    console.log(`🛑 Señal ${signal} recibida, cerrando servidor HTTP...`);
+    httpServer.close(() => process.exit(0));
+    // Forzar salida si algo se queda colgado
+    setTimeout(() => process.exit(0), 5000).unref();
+  });
+}
+
 // Iniciamos el servidor usando httpServer en lugar de app.listen
 httpServer.listen(PORT, () => {
   console.log(`🚀 Panel Backend con WebSockets corriendo en http://localhost:${PORT}`);
-  
+
+  // Arrancar el tracker de sesiones de jugadores (histórico + seguimiento en vivo)
+  initPlayerSessionTracker().catch((err) => console.error('❌ Session tracker error:', err.message));
+
   // Log configuration warnings
   import('./config.js').then(({ logConfigWarnings }) => {
     logConfigWarnings();
